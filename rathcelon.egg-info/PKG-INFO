@@ -1,0 +1,48 @@
+Metadata-Version: 2.2
+Name: rathcelon
+Version: 0.0.0
+Summary: A library for creating rating curves downstream of low-head dams
+Home-page: https://github.com/jlgutenson/rathcelon
+Author: Joseph Gutenson
+Author-email: joseph@follumhydro.com
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: BSD-3 License
+Classifier: Operating System :: OS Independent
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: beautifulsoup4
+Requires-Dist: dask
+Requires-Dist: dataretrieval
+Requires-Dist: fiona
+Requires-Dist: gdal
+Requires-Dist: geoglows
+Requires-Dist: geojson
+Requires-Dist: geopandas
+Requires-Dist: netCDF4
+Requires-Dist: noise
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: pillow==9.0.1
+Requires-Dist: progress
+Requires-Dist: pygeos
+Requires-Dist: pyproj
+Requires-Dist: rasterio
+Requires-Dist: requests
+Requires-Dist: s3fs
+Requires-Dist: scipy
+Requires-Dist: shapely
+Requires-Dist: tqdm
+Requires-Dist: xarray
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# RathCelon
+A tool for extracting cross-sections below a low-head dam
