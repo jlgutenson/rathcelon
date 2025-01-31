@@ -72,7 +72,7 @@ These inputs are:
 To run with the JSON, issue the following command in you command line window:
 
 ```bash
-RathCelon json "path\to\your\input.json"
+rathcelon json "path\to\your\input.json"
 ```
 ### Running from command line
 You can also run RathCelon from the command line without the JSON.
@@ -80,7 +80,7 @@ You can also run RathCelon from the command line without the JSON.
 This can be done by issueing the following command:
 
 ```bash
-RathCelon cli name dam_csv dam_id_field dam_id flowline dem_dir output_dir --bathy_use_banks --process_stream_network --find_banks_based_on_landcover --create_reach_average_curve_file
+rathcelon cli name dam_csv dam_id_field dam_id flowline dem_dir output_dir --bathy_use_banks --process_stream_network --find_banks_based_on_landcover --create_reach_average_curve_file
 ```
 Issuing the commands `--bathy_use_banks`, `--process_stream_network`, `--find_banks_based_on_landcover`, and `--create_reach_average_curve_file` indicates that those options are set to True. 
 
