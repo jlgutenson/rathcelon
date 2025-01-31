@@ -452,7 +452,12 @@ def Check_and_Change_Coordinate_Systems(DEM_File, LandCoverFile):
 
     return (LandCoverFile)
 
-def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, dam_reanalysis_flowfile, output_shapefile, number_of_cross_sections=3):
+def find_nearest_idx(point, tree, gdf):
+    """Find the nearest index and corresponding data for a given point using spatial indexing."""
+    nearest_idx = tree.nearest(point)  # Directly query with the geometry
+    return nearest_idx, gdf.iloc[nearest_idx]
+
+def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, dam_reanalysis_flowfile, STRM_Raster_File, number_of_cross_sections=3):
     """
     Finds a location on the stream network that is downstream of the dam at specified increments and saves it as a shapefile.
 
@@ -470,15 +475,18 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
     Returns:
     - downstream_points: List of shapely.geometry.Point, the calculated downstream locations.
     """
-
-    # Read in input CSV files
-    CurveParam_File = pd.read_csv(CurveParam_File)
-    dam_reanalysis_flowfile = pd.read_csv(dam_reanalysis_flowfile)
+    # Read the VDT and Curve data into DataFrames
+    vdt_df = pd.read_csv(VDT_File)
+    curve_data_df = pd.read_csv(CurveParam_File)
+    
+    # Read the dam reanalysis flow file
+    dam_reanalysis_df = pd.read_csv(dam_reanalysis_flowfile)
 
     # Merge flow parameters
-    merged_df = pd.merge(CurveParam_File, dam_reanalysis_flowfile, on='COMID', how='left')
-    merged_df['tw_median'] = (merged_df['tw_a'] * merged_df['qout_median']) ** merged_df['tw_b']
-    tw_median = merged_df.groupby('COMID')['tw_median'].mean()
+    merged_df = pd.merge(curve_data_df, dam_reanalysis_df, on='COMID', how='left')
+    merged_df['tw_rp2'] = (merged_df['tw_a'] * merged_df['rp2']) ** merged_df['tw_b']
+    tw_median = merged_df.groupby('COMID')['tw_rp2'].max()
+    print(f"This is the tw_median {tw_median}")  
 
     # Read stream shapefile and dam locations
     Dam_StrmShp_gdf = gpd.read_file(Dam_StrmShp)
@@ -516,8 +524,11 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
     start_link = closest_stream['LINKNO']
 
     # Select tw_median based on closest stream 'COMID'
-    tw = tw_median.get(start_link, 50)  # Default to 50m if not found
-    # tw = 100
+    tw = tw_median.get(start_link, 100)  # Default to 50m if not found
+
+    # use a minimum of 100 meters for the top width
+    if tw < 100:
+        tw = 100
 
     # Find the exact point where the dam intersects the stream
     nearest_point_on_stream = nearest_points(closest_stream.geometry, dam_point)[0]
@@ -528,13 +539,13 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
     downstream_points = []
 
     for i in range(1, number_of_cross_sections + 1):
-        distance_downstream = i * tw
-        print(f"Finding downstream point at {distance_downstream} meters from the dam.")
+        distance_downstream = i * tw  # Set correct distance increment
+        print(f"Finding downstream point at {distance_downstream} meters from start_point.")
 
         current_link = start_link
         cumulative_distance = 0
         downstream_point = None
-        start_point = nearest_point_on_stream  # **Start measuring from the dam location!**
+        measuring_point = nearest_point_on_stream  # Start measuring from the last found downstream point
 
         while current_link in G:
             edges = list(G.out_edges(current_link, data=True))  # **Follow only downstream edges**
@@ -542,26 +553,41 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
             if not edges:
                 raise ValueError(f"Stream segment {current_link} has no downstream connection.")
 
-            # **Select the downstream path with the largest stream length (main river)**
-            edges.sort(key=lambda e: e[2]["weight"], reverse=True)
-            next_link, _, edge_data = edges[0]  # Pick the largest flow path
-            stream_segment = edge_data['geometry']
+            # **Follow the correct downstream link based on stream topology in G**
+            next_link = None
+            for edge in edges:
+                _, candidate_next_link, _ = edge
+                if candidate_next_link in G:  # Ensure valid downstream connection
+                    next_link = candidate_next_link
+                    break
 
-            # **Start from the last interpolated point instead of the segment start**
-            if cumulative_distance == 0:
-                segment_start = start_point
-            else:
-                segment_start = Point(stream_segment.coords[0])
+            if next_link is None:
+                raise ValueError(f"Stream segment {current_link} has no valid downstream path.")
 
-            segment_length = LineString([segment_start, Point(stream_segment.coords[0])]).length
-            
+            # Get the geometry of the selected downstream segment
+            stream_segment = G[current_link][next_link]['geometry']
+            segment_coords = list(stream_segment.coords)
+
+            # **Ensure segment is ordered correctly based on network topology**
+            if current_link in G and next_link in G[current_link]:  # Moving downstream
+                if segment_coords[0] != measuring_point.coords[:]:
+                    segment_coords.reverse()  # Ensure downstream flow direction
+
+            segment_line = LineString(segment_coords)
+            segment_length = segment_line.length
+
+            # **Check if the downstream point is within this segment**
             if cumulative_distance + segment_length >= distance_downstream:
                 remaining_distance = distance_downstream - cumulative_distance
-                downstream_point = LineString([segment_start, Point(stream_segment.coords[0])]).interpolate(remaining_distance)
-                break
-            
+                
+                # ✅ **Interpolate downstream correctly along the stream geometry**
+                downstream_point = segment_line.interpolate(segment_line.project(measuring_point) + remaining_distance)
+                break  # Stop once we find the exact location
+
+            # **Move further downstream**
             cumulative_distance += segment_length
-            current_link = next_link  # **Move downstream correctly**
+            current_link = next_link  # Move to next downstream segment
+            measuring_point = Point(segment_coords[-1])  # ✅ Update measuring point to the segment's end
 
         if downstream_point is None:
             raise ValueError("The specified distance downstream exceeds the length of the stream network.")
@@ -569,47 +595,67 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
         # Convert to Latitude/Longitude (EPSG:4326)
         downstream_point = gpd.GeoSeries([downstream_point], crs=projected_crs).to_crs("EPSG:4326").geometry.iloc[0]
 
+        # Store results
         dam_ids.append(dam_id)
-        link_nos.append(current_link)  # **Store correct downstream link**
+        link_nos.append(current_link)
         downstream_points.append(downstream_point)
 
-        # **Start the next iteration from the newly found downstream point**
+        # **Set the new start_point for the next iteration**
         start_point = downstream_point  
+ 
 
-    # **4️⃣ Save the Downstream Points as a Shapefile**
-    output_gdf = gpd.GeoDataFrame({'dam_id': dam_ids, 'LINKNO': link_nos, 'geometry': downstream_points}, crs="EPSG:4326")
+    # **Save the Downstream Points as a Shapefile**
+    downstream_gdf = gpd.GeoDataFrame({'dam_id': dam_ids, 'LINKNO': link_nos, 'geometry': downstream_points}, crs="EPSG:4326")
 
-    os.makedirs(os.path.dirname(output_shapefile), exist_ok=True)
-    output_gdf.to_file(output_shapefile)
+    # print(f"✅ Downstream points saved to: {output_shapefile}")
 
-    print(f"✅ Downstream points saved to: {output_shapefile}")
+    # **4️⃣ Find Nearest VDT and Curve Data Points**
+    # Compute lat/lon for curve data
+    (minx, miny, maxx, maxy, dx, dy, _, _, _, _) = Get_Raster_Details(STRM_Raster_File)
+    cellsize_x, cellsize_y = abs(float(dx)), abs(float(dy))
+    lat_base, lon_base = float(maxy) - 0.5 * cellsize_y, float(minx) + 0.5 * cellsize_x
 
-    return downstream_points
+    curve_data_df['Lat'] = lat_base - curve_data_df['Row'] * cellsize_y
+    curve_data_df['Lon'] = lon_base + curve_data_df['Col'] * cellsize_x
+    vdt_df['Lat'] = lat_base - vdt_df['Row'] * cellsize_y
+    vdt_df['Lon'] = lon_base + vdt_df['Col'] * cellsize_x
 
+    curve_data_gdf = gpd.GeoDataFrame(curve_data_df, geometry=gpd.points_from_xy(curve_data_df['Lon'], curve_data_df['Lat']), crs="EPSG:4269")
+    vdt_gdf = gpd.GeoDataFrame(vdt_df, geometry=gpd.points_from_xy(vdt_df['Lon'], vdt_df['Lat']), crs="EPSG:4269")
 
+    # Convert all to projected CRS
+    curve_data_gdf, vdt_gdf, downstream_gdf = (gdf.to_crs(projected_crs) for gdf in [curve_data_gdf, vdt_gdf, downstream_gdf])
+    
+    vdt_gdfs = []
+    curve_data_gdfs = []
+    # Extract target point from the GeoDataFrame
+    for i in downstream_gdf.index:
+        # For example, let's use the first point in the GeoDataFrame as the target point
+        target_point = downstream_gdf.geometry.iloc[i]
+        # Calculate distances to the target point
+        curve_data_gdf['distance'] = curve_data_gdf.geometry.apply(lambda x: target_point.distance(x))
+        vdt_gdf['distance'] = vdt_gdf.geometry.apply(lambda x: target_point.distance(x))
 
+        # Find the nearest VDT and curve point
+        min_distance_curve_data_gdf = curve_data_gdf['distance'].min()
+        min_distance_vdt_gdf = vdt_gdf['distance'].min()
 
+        # Filter the GeoDataFrames to only include the nearest points
+        nearest_curves_data_gdf = curve_data_gdf[(curve_data_gdf['distance']==min_distance_curve_data_gdf)]
+        nearest_vdt_gdf = vdt_gdf[(vdt_gdf['distance']==min_distance_vdt_gdf)]
 
+        vdt_gdfs.append(nearest_vdt_gdf)
+        curve_data_gdfs.append(nearest_curves_data_gdf)
+    
+    # combine the VDT gdfs and curve data gdfs into one a piece
+    vdt_gdf = pd.concat(vdt_gdfs)
+    curve_data_gdf = pd.concat(curve_data_gdfs)
 
-    # # Read in the curve data
-    # curve_data_df = pd.read_csv(CurveParam_File, delimiter=',')
-
-    # # Read in the VDT file
-    # # adding column header names for each row of the VDT file
-    # column_names = ["COMID","Row","Col","Elev","QBaseflow"]
-    # vdt_steps = 30
-    # for step in range(1,vdt_steps+1):     
-    #     Q = f"Q_{step}"
-    #     column_names.append(Q)
-    #     V = f"V_{step}"
-    #     column_names.append(V)
-    #     T = f"T_{step}"
-    #     column_names.append(T)
-    #     WSE = f"WSE_{step}"
-    #     column_names.append(WSE)
-
-    # # read the VDT file into Pandas
-    # vdt_df = pd.read_csv(VDT_File, skiprows=[0], names=column_names)
+    # Dropping the 'distance' column
+    vdt_gdf = vdt_gdf.drop(columns=['distance'])
+    curve_data_gdf = curve_data_gdf.drop(columns=['distance'])
+    
+    return downstream_gdf, vdt_gdf, curve_data_gdf
 
 
 def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_Folder, FLOW_Folder, 
@@ -638,6 +684,10 @@ def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_
         
         VDT_File = os.path.join(VDT_Folder, str(dam_id) + '_VDT_Database.txt')
         Curve_File = os.path.join(VDT_Folder, str(dam_id) + '_CurveFile.csv')
+
+        # these are the files that will be created by the code
+        Local_VDT_File = os.path.join(VDT_Folder, str(dam_id) + '_Local_VDT_Database.shp')
+        Local_Curve_File = os.path.join(VDT_Folder, str(dam_id) + '_Local_CurveFile.shp')
         
         ARC_BathyFile = os.path.join(BathyFileFolder, str(dam_id) + '_ARC_Bathy.tif')
 
@@ -670,14 +720,19 @@ def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_
 
         
         # Create our Curve and VDT Database data
-        if os.path.exists(ARC_BathyFile) == False:
+        if os.path.exists(ARC_BathyFile) == False or os.path.exists(VDT_File) == False or os.path.exists(Curve_File) == False:
             print('Cannot find bathy file, so creating ' + ARC_BathyFile)
             arc = Arc(ARC_FileName_Bathy)
             arc.run() # Runs ARC
         
         # Now we need to use the Dam_StrmShp and VDT data to find the stream cells at distance increments below the dam
-        find_stream_cells_at_increments_below_dam(Curve_File, VDT_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, Dam_Reanalsyis_FlowFile,
-                                                  r"C:\Users\jlgut\OneDrive\Desktop\rathcelon_test_data\Results\downstream_test.shp")
+        downstream_gdf, vdt_gdf, curve_data_gdf = find_stream_cells_at_increments_below_dam(Curve_File, VDT_File, dam_csv, dam_id_field, dam_id,
+                                                                                            Dam_StrmShp, Dam_Reanalsyis_FlowFile,
+                                                                                            STRM_File_Clean)
+        
+        # output the results to shapefiles
+        vdt_gdf.to_file(Local_VDT_File)
+        curve_data_gdf.to_file(Local_Curve_File)
 
 
     return

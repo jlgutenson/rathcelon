@@ -9,8 +9,8 @@
             "dem_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/DEM",
             "bathy_use_banks": false,
             "output_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/Results",
-            "process_stream_network": true,
-            "find_banks_based_on_landcover": true,
+            "process_stream_network": false,
+            "find_banks_based_on_landcover": false,
             "create_reach_average_curve_file": false
         }
     ]
