@@ -85,7 +85,7 @@ rathcelon cli name dam_csv dam_id_field dam_id flowline dem_dir output_dir --bat
 Issuing the commands `--bathy_use_banks`, `--process_stream_network`, `--find_banks_based_on_landcover`, and `--create_reach_average_curve_file` indicates that those options are set to True. 
 
 ## Outputs
-In the output_dir you specify in your inputs, you will find a folder that is the name you specify in your inputs. In the name folder, will be several subfolders. The "VDT" folder contains the shapefiles {name}_Local_VDT_Database.shp and {name}_Local_CurveFile.shp. These will be the 3 nearest VDT database and curvefile stream cells that are 1, 2, and 3x the topwidth distance of the stream away from the dam. The top width was estimated using the 2yr discharge in the "output_dir/FLOW/{name}_Reanalysis.csv" file and finding the maximum for the stream reach on which the dam is located. 
+In the output_dir you specify in your inputs, you will find a folder that is the name you specify in your inputs. In the name folder, will be several subfolders. The "VDT" folder contains the shapefiles {name}_Local_VDT_Database.shp and {name}_Local_CurveFile.shp. These will be the 3 nearest VDT database and curvefile stream cells that are 1, 2, and 3x the topwidth distance of the stream away from the dam. The top width was estimated using the 2yr discharge in the "output_dir/FLOW/{name}_Reanalysis.csv" file and finding the median for the stream reach on which the dam is located. 
 
 For a breakdown of the attributes in the curve file, see [this wiki](https://github.com/MikeFHS/automated-rating-curve/wiki/Running-ARC-and-Looking-at-ARC-Outputs). 
 

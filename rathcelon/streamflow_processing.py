@@ -497,11 +497,48 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     StrmShp_gdf = StrmShp_gdf.sort_values('distance')
     StrmShp_filtered_gdf = StrmShp_gdf.head(1)
 
+    # # Use the 'LINKNO' and 'DSLINKNO' fields to find the stream upstream and downstream of the dam
+    # current_rivid = StrmShp_filtered_gdf['LINKNO'].values[0]
+    # downstream_rivid = StrmShp_filtered_gdf['DSLINKNO'].values[0]
+    # upstream_StrmShp_gdf = StrmShp_gdf[StrmShp_gdf['DSLINKNO'] == current_rivid]
+    # downstream_StrmShp_gdf = StrmShp_gdf[StrmShp_gdf['LINKNO'] == downstream_rivid]
+
     # Use the 'LINKNO' and 'DSLINKNO' fields to find the stream upstream and downstream of the dam
-    upstream_rivid = StrmShp_filtered_gdf['LINKNO'].values[0]
+    current_rivid = StrmShp_filtered_gdf['LINKNO'].values[0]
     downstream_rivid = StrmShp_filtered_gdf['DSLINKNO'].values[0]
-    upstream_StrmShp_gdf = StrmShp_gdf[StrmShp_gdf['LINKNO'] == upstream_rivid]
-    downstream_StrmShp_gdf = StrmShp_gdf[StrmShp_gdf['LINKNO'] == downstream_rivid]
+
+    # Find the upstream segment (if needed)
+    upstream_StrmShp_gdf = StrmShp_gdf[StrmShp_gdf['DSLINKNO'] == current_rivid]
+
+    # Initialize a list to store the downstream segments.
+    downstream_segments = []
+
+    # Start with the dam's downstream segment.
+    current_downstream_rivid = downstream_rivid
+
+    # Loop to find up to 10 downstream segments.
+    for i in range(11):
+        # Find the stream segment whose LINKNO matches the current downstream rivid.
+        segment = StrmShp_gdf[StrmShp_gdf['LINKNO'] == current_downstream_rivid]
+        
+        # If no segment is found, break the loop.
+        if segment.empty:
+            print(f"No downstream segment found after {i} segments.")
+            break
+        
+        # Append the found segment to our list.
+        downstream_segments.append(segment)
+        
+        # Update the current_downstream_rivid to the DSLINKNO of the found segment.
+        # This will be used to find the next downstream segment.
+        current_downstream_rivid = segment['DSLINKNO'].values[0]
+
+    # Combine the downstream segments into one GeoDataFrame.
+    if downstream_segments:
+        downstream_StrmShp_gdf = pd.concat(downstream_segments, ignore_index=True)
+    else:
+        # If no downstream segments were found, create an empty GeoDataFrame.
+        downstream_StrmShp_gdf = gpd.GeoDataFrame()
 
     # merge the StrmShp_filtered_gdf, upstream_StrmShp_gdf, and downstream_StrmShp_gdf into a single geodataframe
     StrmShp_filtered_gdf = pd.concat([StrmShp_filtered_gdf, upstream_StrmShp_gdf, downstream_StrmShp_gdf])

@@ -37,8 +37,8 @@ import geopandas as gpd
 import fiona
 from shapely.geometry import shape
 import networkx as nx
-from shapely.geometry import Point, LineString
-from shapely.ops import nearest_points, linemerge
+from shapely.geometry import Point, LineString, MultiLineString
+from shapely.ops import nearest_points, linemerge, split
 import numpy as np
 
 # local imports
@@ -457,6 +457,53 @@ def find_nearest_idx(point, tree, gdf):
     nearest_idx = tree.nearest(point)  # Directly query with the geometry
     return nearest_idx, gdf.iloc[nearest_idx]
 
+# Function to get a point strictly on the network
+def get_point_on_stream(line, target_distance):
+    """
+    Walks along a LineString and finds a point at a given distance,
+    ensuring it follows the stream path without deviating.
+    """
+    current_distance = 0  # Start distance tracking
+
+    for i in range(len(line.coords) - 1):
+        start_pt = Point(line.coords[i])
+        end_pt = Point(line.coords[i + 1])
+
+        segment = LineString([start_pt, end_pt])
+        segment_length = segment.length
+
+        # If target_distance falls within this segment
+        if current_distance + segment_length >= target_distance:
+            # Compute exact location on this segment
+            remaining_distance = target_distance - current_distance
+            return segment.interpolate(remaining_distance)
+
+        current_distance += segment_length  # Update walked distance
+
+    return Point(line.coords[-1])  # If we exceed the length, return last point
+
+def walk_stream_for_point(line, target_distance):
+    """
+    Walks along a LineString segment-by-segment, stopping at the exact 
+    cumulative distance to ensure the point stays on the stream network.
+    """
+    current_distance = 0
+
+    for i in range(len(line.coords) - 1):
+        start_pt = Point(line.coords[i])
+        end_pt = Point(line.coords[i + 1])
+        segment = LineString([start_pt, end_pt])
+        segment_length = segment.length
+
+        # If our target point is within this segment
+        if current_distance + segment_length >= target_distance:
+            remaining_distance = target_distance - current_distance
+            return segment.interpolate(remaining_distance)  # Stay exactly on the stream
+
+        current_distance += segment_length  # Move forward
+
+    return Point(line.coords[-1])  # Return last point if over length
+
 def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, dam_reanalysis_flowfile, STRM_Raster_File, number_of_cross_sections=3):
     """
     Finds a location on the stream network that is downstream of the dam at specified increments and saves it as a shapefile.
@@ -484,9 +531,8 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
 
     # Merge flow parameters
     merged_df = pd.merge(curve_data_df, dam_reanalysis_df, on='COMID', how='left')
-    merged_df['tw_rp2'] = (merged_df['tw_a'] * merged_df['rp2']) ** merged_df['tw_b']
-    tw_median = merged_df.groupby('COMID')['tw_rp2'].max()
-    print(f"This is the tw_median {tw_median}")  
+    merged_df['tw_rp2'] = merged_df['tw_a'] * (merged_df['rp2'] ** merged_df['tw_b'])
+
 
     # Read stream shapefile and dam locations
     Dam_StrmShp_gdf = gpd.read_file(Dam_StrmShp)
@@ -523,6 +569,12 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
     closest_stream = Dam_StrmShp_gdf.loc[Dam_StrmShp_gdf['distance'].idxmin()]
     start_link = closest_stream['LINKNO']
 
+    # Filter the top-width data to the closest stream and find the median
+    merged_df = merged_df[merged_df['COMID']==start_link]
+    tw_median = merged_df.groupby('COMID')['tw_rp2'].median()
+    
+
+
     # Select tw_median based on closest stream 'COMID'
     tw = tw_median.get(start_link, 100)  # Default to 50m if not found
 
@@ -530,78 +582,89 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
     if tw < 100:
         tw = 100
 
-    # Find the exact point where the dam intersects the stream
-    nearest_point_on_stream = nearest_points(closest_stream.geometry, dam_point)[0]
 
-    # **3️⃣ Traverse Downstream Using DSLINKNO**
+    # Get the dam’s intersection point on the stream
+    current_point = nearest_points(closest_stream.geometry, dam_point)[0]
+    # Assume current_link is the stream segment containing current_point (the dam intersection)
+    current_link = start_link
+
     dam_ids = []
     link_nos = []
     downstream_points = []
 
+    # Loop for each downstream cross-section
     for i in range(1, number_of_cross_sections + 1):
-        distance_downstream = i * tw  # Set correct distance increment
-        print(f"Finding downstream point at {distance_downstream} meters from start_point.")
+        # We want to move exactly tw meters from the current point
+        remaining_distance_to_travel = tw
 
-        current_link = start_link
-        cumulative_distance = 0
-        downstream_point = None
-        measuring_point = nearest_point_on_stream  # Start measuring from the last found downstream point
-
-        while current_link in G:
-            edges = list(G.out_edges(current_link, data=True))  # **Follow only downstream edges**
-            
-            if not edges:
-                raise ValueError(f"Stream segment {current_link} has no downstream connection.")
-
-            # **Follow the correct downstream link based on stream topology in G**
+        print(f"Calculating point {i*remaining_distance_to_travel} meters downstream of the dam.")
+        
+        # Traverse the network until we've moved the full tw meters
+        while remaining_distance_to_travel > 0:
+            # Get downstream edges from the current link
+            downstream_edges = list(G.out_edges(current_link, data=True))
+            if not downstream_edges:
+                raise ValueError(
+                    f"Not enough downstream stream length for cross-section {i} (link {current_link})."
+                )
+            # Select the first valid downstream edge (adjust this logic as needed)
             next_link = None
-            for edge in edges:
+            for edge in downstream_edges:
                 _, candidate_next_link, _ = edge
-                if candidate_next_link in G:  # Ensure valid downstream connection
+                if candidate_next_link in G:
                     next_link = candidate_next_link
                     break
-
             if next_link is None:
-                raise ValueError(f"Stream segment {current_link} has no valid downstream path.")
+                raise ValueError(f"No valid downstream link from link {current_link}.")
 
-            # Get the geometry of the selected downstream segment
-            stream_segment = G[current_link][next_link]['geometry']
-            segment_coords = list(stream_segment.coords)
+            # Retrieve geometry for the current segment (from current_link to next_link)
+            seg_geom = G[current_link][next_link]['geometry']
+            # seg_coords = list(seg_geom.coords)
 
-            # **Ensure segment is ordered correctly based on network topology**
-            if current_link in G and next_link in G[current_link]:  # Moving downstream
-                if segment_coords[0] != measuring_point.coords[:]:
-                    segment_coords.reverse()  # Ensure downstream flow direction
+            if seg_geom.geom_type.startswith('Multi'):
+                merged_geom = linemerge(seg_geom)
+                seg_coords = list(merged_geom.coords)
+            else:
+                seg_coords = list(seg_geom.coords)
 
-            segment_line = LineString(segment_coords)
-            segment_length = segment_line.length
 
-            # **Check if the downstream point is within this segment**
-            if cumulative_distance + segment_length >= distance_downstream:
-                remaining_distance = distance_downstream - cumulative_distance
-                
-                # ✅ **Interpolate downstream correctly along the stream geometry**
-                downstream_point = segment_line.interpolate(segment_line.project(measuring_point) + remaining_distance)
-                break  # Stop once we find the exact location
+            # Ensure the segment’s coordinates are ordered so that its start is near our current_point.
+            # (Using almost_equals avoids floating-point comparison issues.)
+            if not Point(seg_coords[0]).equals_exact(current_point, tolerance=0.2):
+                seg_coords.reverse()
+            seg_line = LineString(seg_coords)
 
-            # **Move further downstream**
-            cumulative_distance += segment_length
-            current_link = next_link  # Move to next downstream segment
-            measuring_point = Point(segment_coords[-1])  # ✅ Update measuring point to the segment's end
+            # Find how far along seg_line our current_point lies
+            proj_distance = seg_line.project(current_point)
+            distance_remaining_in_seg = seg_line.length - proj_distance
 
-        if downstream_point is None:
-            raise ValueError("The specified distance downstream exceeds the length of the stream network.")
+            if distance_remaining_in_seg >= remaining_distance_to_travel:
+                # The target point lies within the current segment.
+                new_point = seg_line.interpolate(proj_distance + remaining_distance_to_travel)
+                # Update our current point and finish the "walk" for this cross-section.
+                current_point = new_point
+                remaining_distance_to_travel = 0
+            else:
+                # Use up the remainder of this segment and continue into the next one.
+                remaining_distance_to_travel -= distance_remaining_in_seg
+                # Set current_point to the end of the segment.
+                current_point = Point(seg_coords[-1])
+                # Update current_link to the downstream link we just traversed.
+                current_link = next_link
 
-        # Convert to Latitude/Longitude (EPSG:4326)
-        downstream_point = gpd.GeoSeries([downstream_point], crs=projected_crs).to_crs("EPSG:4326").geometry.iloc[0]
-
-        # Store results
+        # At this point, current_point has moved exactly tw meters from its previous location.
+        # Record the result (convert to EPSG:4326 if needed).
+        downstream_point = (
+            gpd.GeoSeries([current_point], crs=projected_crs)
+            .to_crs("EPSG:4326")
+            .geometry.iloc[0]
+        )
         dam_ids.append(dam_id)
         link_nos.append(current_link)
         downstream_points.append(downstream_point)
 
-        # **Set the new start_point for the next iteration**
-        start_point = downstream_point  
+    # downstream_points now contains cross-sections spaced exactly tw meters apart along the stream.
+
  
 
     # **Save the Downstream Points as a Shapefile**
