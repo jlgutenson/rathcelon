@@ -1,5 +1,5 @@
 # RathCelon
-A tool for extracting rating curves below a low-head dam
+A tool for extracting rating curves below a low-head dam. The current code is explicity set up to work with the [ECMWF GEOGLOWS Streamflow Service](https://geoglows.ecmwf.int/) datasets. 
 
 ## How to Set-up
 1. Using Anaconda run:
