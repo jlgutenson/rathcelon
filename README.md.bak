@@ -8,13 +8,6 @@ A tool for extracting rating curves below a low-head dam. The current code is ex
 conda create -n rathcelon_py310 python=3.10 pyarrow geopandas pandas netcdf4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm geoglows pygeos noise pillow=9.0.1 rasterio
 ```
 
-1b. Alternatively, you can create an environment using conda and then get the libraries using pip
-conda create -n rathcelon_py310 python=3.10
-conda activate rathcelon_py310
-pip install --upgrade pip
-pip install pyarrow geopandas pandas netCDF4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm geoglows pygeos noise pillow==9.0.1 rasterio
-conda install -c conda-forge gdal
-
 2. Activate you conda environment with the command:
 ```bash
 conda activate rathcelon_py310
@@ -54,7 +47,7 @@ The first is by creating an input JSON file like the one below:
             "dem_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/DEM",
             "bathy_use_banks": false,
             "output_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/Results",
-            "process_stream_network": true,
+            "process_stream_network": false,
             "find_banks_based_on_landcover": false,
             "create_reach_average_curve_file": false
         }

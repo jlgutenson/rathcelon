@@ -74,26 +74,23 @@ def Process_Geospatial_Data(ARC_Folder,
         LandCoverFile = Check_and_Change_Coordinate_Systems(DEM_File, LandCoverFile)
         Create_AR_LandRaster(LandCoverFile, LAND_File, projWin_extents, dem_projection, ncols, nrows)
 
-    # now we need to figure out if our Dam_StrmShp and DEM_Reanalysis_Flowfile exists and if not, create it
+    # now we need to figure out if our DEM_StrmShp and DEM_Reanalysis_Flowfile exists and if not, create it
     if os.path.isfile(Dam_StrmShp) and os.path.isfile(Dam_Reanalsyis_FlowFile):
         print(Dam_StrmShp + ' Already Exists')
         print(Dam_Reanalsyis_FlowFile + ' Already Exists')
         Dam_StrmShp_gdf = gpd.read_file(Dam_StrmShp)
         rivids = Dam_StrmShp_gdf['LINKNO'].values
     elif StrmShp_gdf is not None and os.path.isfile(Dam_StrmShp) is False and os.path.isfile(Dam_Reanalsyis_FlowFile) is False:
-        print('Running Function: Process_and_Write_Retrospective_Data_for_Dam')
-        (DEM_Reanalsyis_FlowFile, Dam_StrmShp, rivids, Dam_StrmShp_gdf) = HistFlows.Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, 'LINKNO', dam_csv, 
+        (DEM_Reanalsyis_FlowFile, DEM_StrmShp, rivids, DEM_StrmShp_gdf) = HistFlows.Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, 'LINKNO', dam_csv, 
                                                                                                                                  dam_id_field, dam_id, Dam_Reanalsyis_FlowFile,
                                                                                                                                  Dam_StrmShp)
-
 
     #Create Stream Raster
     if os.path.isfile(STRM_File):
         print(STRM_File + ' Already Exists')
     else:
         print('Creating ' + STRM_File)
-        print('   by rasterizing ' + Dam_StrmShp)
-        Create_AR_StrmRaster(Dam_StrmShp, STRM_File, outputBounds, minx, miny, maxx, maxy, dx, dy, ncols, nrows, 'LINKNO')
+        Create_AR_StrmRaster(DEM_StrmShp, STRM_File, outputBounds, minx, miny, maxx, maxy, dx, dy, ncols, nrows, 'LINKNO')
     
     #Clean Stream Raster
     if os.path.isfile(STRM_File_Clean):
