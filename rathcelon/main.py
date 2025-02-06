@@ -881,9 +881,14 @@ def process_dam(dam_dict):
         dem_proj = dem_dataset.GetProjection()  # Get the projection as a WKT string
         dem_spatial_ref = osr.SpatialReference()
         dem_spatial_ref.ImportFromWkt(dem_proj)
-        dem_crs = dem_spatial_ref.ExportToProj4()  # Export CRS to a Proj4 string (or other formats if needed)
+        # Get the EPSG code
+        dem_spatial_ref.AutoIdentifyEPSG()
+        dem_epsg_code = dem_spatial_ref.GetAuthorityCode(None)  # This extracts the EPSG code as a string
         # Check if the CRS of the shapefile matches the DEM's CRS
-        if StrmShp_gdf.crs != dem_crs:
+        if StrmShp_gdf.crs != dem_epsg_code:
+            print("DEM and Stream Network have different coordinate systems...")
+            print(StrmShp_gdf.crs)
+            print(dem_epsg_code)
             # Reproject the shapefile to match the DEM's CRS
             StrmShp_gdf = StrmShp_gdf.to_crs(dem_crs)
         dem_dataset = None
