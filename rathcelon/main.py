@@ -885,12 +885,12 @@ def process_dam(dam_dict):
         dem_spatial_ref.AutoIdentifyEPSG()
         dem_epsg_code = dem_spatial_ref.GetAuthorityCode(None)  # This extracts the EPSG code as a string
         # Check if the CRS of the shapefile matches the DEM's CRS
-        if StrmShp_gdf.crs != dem_epsg_code:
+        if int(StrmShp_gdf.crs[5:]) != int(dem_epsg_code):
             print("DEM and Stream Network have different coordinate systems...")
-            print(StrmShp_gdf.crs)
-            print(dem_epsg_code)
+            print(f"Stream CRS: {StrmShp_gdf.crs[5:]}")
+            print(f"DEM CRS: {dem_epsg_code}")
             # Reproject the shapefile to match the DEM's CRS
-            StrmShp_gdf = StrmShp_gdf.to_crs(dem_crs)
+            StrmShp_gdf = StrmShp_gdf.to_crs(dem_epsg_code)
         dem_dataset = None
         dem_proj = None 
         dem_spatial_ref = None
