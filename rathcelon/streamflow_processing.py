@@ -197,6 +197,3 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     
     # Return the combined DataFrame as a Dask DataFrame
     return (CSV_File_Name, OutShp_File_Name, rivids_int, StrmShp_filtered_gdf)
-
-if __name__ == "__main__":
-    pass
