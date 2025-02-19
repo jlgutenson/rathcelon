@@ -16,7 +16,6 @@ setup(
         'dataretrieval',
         'fiona',
         'gdal',
-        'geoglows',
         'geojson',
         'geopandas',
         'netCDF4',
