@@ -1,19 +1,21 @@
 # RathCelon
 A tool for extracting rating curves below a low-head dam. The current code is explicity set up to work with the [ECMWF GEOGLOWS Streamflow Service](https://geoglows.ecmwf.int/) datasets. 
 
-## How to Set-up
-1. Using Anaconda run:
+## How to Set-up RathCelon
+1a. Using Anaconda run:
 
 ```bash
-conda create -n rathcelon_py310 python=3.10 pyarrow geopandas pandas netcdf4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm geoglows pygeos noise pillow=9.0.1 rasterio
+conda create -n rathcelon_py310 python=3.10 pyarrow geopandas pandas netcdf4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm pygeos noise pillow=9.0.1 rasterio
 ```
-
 1b. Alternatively, you can create an environment using conda and then get the libraries using pip
+
+```bash
 conda create -n rathcelon_py310 python=3.10
 conda activate rathcelon_py310
 pip install --upgrade pip
-pip install pyarrow geopandas pandas netCDF4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm geoglows pygeos noise pillow==9.0.1 rasterio
+pip install pyarrow geopandas pandas netCDF4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm pygeos noise pillow==9.0.1 rasterio
 conda install -c conda-forge gdal
+```
 
 2. Activate you conda environment with the command:
 ```bash
@@ -40,7 +42,7 @@ rathcelon -h
 RathCelon can be ran from a command prompt in two ways. 
 
 ### Running with a JSON
-The first is by creating an input JSON file like the one below:
+The first is by creating an input JSON file like the one below. Note that if you are on a PC, the `\` in your path need to be changed to '/' in the JSON file:
 
 ```json
 {
@@ -81,6 +83,7 @@ To run with the JSON, issue the following command in you command line window:
 ```bash
 rathcelon json "path\to\your\input.json"
 ```
+
 ### Running from command line
 You can also run RathCelon from the command line without the JSON.
 
@@ -89,6 +92,7 @@ This can be done by issueing the following command:
 ```bash
 rathcelon cli name dam_csv dam_id_field dam_id flowline dem_dir output_dir --bathy_use_banks --process_stream_network --find_banks_based_on_landcover --create_reach_average_curve_file
 ```
+
 Issuing the commands `--bathy_use_banks`, `--process_stream_network`, `--find_banks_based_on_landcover`, and `--create_reach_average_curve_file` indicates that those options are set to True. 
 
 ## Outputs
