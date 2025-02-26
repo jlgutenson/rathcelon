@@ -5,7 +5,7 @@ A tool for extracting rating curves below a low-head dam. The current code is ex
 1a. Using Anaconda run:
 
 ```bash
-conda create -n rathcelon_py310 python=3.10 pyarrow geopandas pandas netcdf4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm pygeos noise pillow=9.0.1 rasterio
+conda create -n rathcelon_py310 python=3.10 pyarrow geopandas pandas netcdf4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm pygeos pillow=9.0.1 rasterio
 ```
 1b. Alternatively, you can create an environment using conda and then get the libraries using pip
 
@@ -13,7 +13,7 @@ conda create -n rathcelon_py310 python=3.10 pyarrow geopandas pandas netcdf4 das
 conda create -n rathcelon_py310 python=3.10
 conda activate rathcelon_py310
 pip install --upgrade pip
-pip install pyarrow geopandas pandas netCDF4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm pygeos noise pillow==9.0.1 rasterio
+pip install pyarrow geopandas pandas netCDF4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm pygeos pillow==9.0.1 rasterio
 conda install -c conda-forge gdal
 ```
 

@@ -941,7 +941,7 @@ def process_json_input(json_file):
         # Ensure the output directory exists
         os.makedirs(output_dir, exist_ok=True)
 
-        print(f"Processing watershed: {dam_name} with parameters: {dam_dict}")
+        print(f"Processing dam: {dam_name} with parameters: {dam_dict}")
 
         # Call your existing processing logic here
         process_dam(dam_dict)
@@ -970,7 +970,7 @@ def process_cli_arguments(args):
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    print(f"Processing watershed: {args.watershed} with parameters: {dam_dict}")
+    print(f"Processing dam: {args.watershed} with parameters: {dam_dict}")
     print(f"Results will be saved in: {output_dir}")
 
     # Call the existing processing logic here
