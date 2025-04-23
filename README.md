@@ -48,17 +48,19 @@ The first is by creating an input JSON file like the one below. Note that if you
 {
     "dams": [
         {
-            "name": "272",
+            "name": "152",
             "dam_csv":"C:/Users/jlgut/OneDrive/Desktop/rathcelon/examples/LHD_lat_long.csv",
             "dam_id_field": "BYU_SITE_ID",
-            "dam_id": 272,
+            "dam_id": 152,
             "flowline": "C:/Users/jlgut/Downloads/streams_712.gpkg",
-            "dem_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/DEM",
+            "dem_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/DEM_3",
             "bathy_use_banks": false,
             "output_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/Results",
             "process_stream_network": true,
-            "find_banks_based_on_landcover": false,
-            "create_reach_average_curve_file": false
+            "find_banks_based_on_landcover": true,
+            "create_reach_average_curve_file": false,
+            "known_baseflow": 5.0,
+            "known_channel_forming_discharge": 10.0
         }
     ]
 }
@@ -76,7 +78,9 @@ These inputs are:
     "output_dir": (str) Path to where the outputs of your RathCelon output will be stored
     "process_stream_network": (true/false) If true, RathCelon will take the flowline option and determine the local instance it will use to do its analysis. If false, the network has already been processed to find a local instance
     "find_banks_based_on_landcover": (true/false) If true, the banks of the stream will be found using [this logic](https://github.com/MikeFHS/automated-rating-curve/wiki/Estimating-Bathymetry-in-ARC#discovering-the-waterfront). If false, ARC will look to find the banks by assuming that the stream is a flat surface in the DEM. 
-    "create_reach_average_curve_file": (true/false): If true, RathCelon with direct ARC to generate a curve file that is the same for all stream cells on a stream reach. If false, RathCelon will direct ARC to generate a curve file that has a local curve for each stream cell. 
+    "create_reach_average_curve_file": (true/false) If true, RathCelon with direct ARC to generate a curve file that is the same for all stream cells on a stream reach. If false, RathCelon will direct ARC to generate a curve file that has a local curve for each stream cell. 
+    "known_baseflow": (float) Optional input expressed as a value in cubic meters per second. This is used in conjunction with "bathy_use_banks" = False. This will be substituted into the ARC's processing to estimate a bathymetry in each cross section. This value will also be used to calculate the top width used for distance calculations. 
+    "known_channel_forming_discharge": (float) Optional input expressed as a value in cubic meters per second. This is used in conjunction with "bathy_use_banks" = True. This will be substituted into the ARC's processing to estimate a bathymetry in each cross section. 
 
 To run with the JSON, issue the following command in you command line window:
 
@@ -90,13 +94,23 @@ You can also run RathCelon from the command line without the JSON.
 This can be done by issueing the following command:
 
 ```bash
-rathcelon cli name dam_csv dam_id_field dam_id flowline dem_dir output_dir --bathy_use_banks --process_stream_network --find_banks_based_on_landcover --create_reach_average_curve_file
+rathcelon cli name dam_csv dam_id_field dam_id flowline dem_dir output_dir --bathy_use_banks --process_stream_network --find_banks_based_on_landcover --create_reach_average_curve_file --known_baseflow 5.0 --known_channel_forming_discharge 10.0
 ```
 
 Issuing the commands `--bathy_use_banks`, `--process_stream_network`, `--find_banks_based_on_landcover`, and `--create_reach_average_curve_file` indicates that those options are set to True. 
 
 ## Outputs
-In the output_dir you specify in your inputs, you will find a folder that is the name you specify in your inputs. In the name folder, will be several subfolders. The "VDT" folder contains the shapefiles {name}_Local_VDT_Database.shp and {name}_Local_CurveFile.shp. These will be the 3 nearest VDT database and curvefile stream cells that are 1, 2, and 3x the topwidth distance of the stream away from the dam. The top width was estimated using the 2yr discharge in the "output_dir/FLOW/{name}_Reanalysis.csv" file and finding the median for the stream reach on which the dam is located. 
+In the output_dir you specify in your inputs, you will find a folder that is the name you specify in your inputs. In the name folder, will be several subfolders. 
+
+The "VDT" folder contains the shapefiles {name}_Local_VDT_Database.shp and {name}_Local_CurveFile.shp. 
+
+These will be the 3 nearest VDT database and curvefile stream cells that are 1, 2, and 3x the top width distance of the stream downstream of the dam location and 1 stream cell that is 1/4x the top width distance upstream of the dam location. 
+
+If you set "known_baseflow" in your inputs, this will be used by ARC to estimate bathymetry (if "bathy_use_banks" = False) and RathCelon to estimate the top width used in the distance calculations. Otherwise, top width was estimated using the 2yr discharge in the "output_dir/FLOW/{name}_Reanalysis.csv" file.
+
+In either case, RathCelon finds the median top width for the stream reach on which the dam is located and uses this value to calculate the distance. 
+
+If the original 1x top-width distance is <100 meters, RathCelon will default to using 100 meters for the top width distance. 
 
 For a breakdown of the attributes in the curve file, see [this wiki](https://github.com/MikeFHS/automated-rating-curve/wiki/Running-ARC-and-Looking-at-ARC-Outputs). 
 

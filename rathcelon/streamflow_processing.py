@@ -9,7 +9,7 @@ import s3fs
 import xarray as xr
 
 
-def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_csv, dam_id_field, dam_id, CSV_File_Name, OutShp_File_Name):
+def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge, CSV_File_Name, OutShp_File_Name):
 
     # Load the dam data in as a geodataframe
     print('Process_and_Write_Retrospective_Data_for_Dam: Load the dam data in as a geodataframe')
@@ -30,16 +30,28 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     print('Process_and_Write_Retrospective_Data_for_Dam: Reset index to avoid index errors')
     dam_gdf = dam_gdf.reset_index(drop=True)
 
-    # Ensure StrmShp_gdf has the same CRS as dam_gdf
-    print('Process_and_Write_Retrospective_Data_for_Dam: Ensure StrmShp_gdf has the same CRS as dam_gdf')
-    if StrmShp_gdf.crs != dam_gdf.crs:
-        dam_gdf = dam_gdf.to_crs(StrmShp_gdf.crs)
+    # Print stage info
+    print('Process_and_Write_Retrospective_Data_for_Dam: Convert both GeoDataFrames to a common projected CRS')
 
-    # Find the closest stream using distance calculation
+    # save the StrmShp CRS to convert StrmShp_filtered_gdf back to after the distance calculation
+    StrmShp_crs = StrmShp_gdf.crs
+
+    # Determine an appropriate UTM zone using GeoPandas
+    utm_crs = StrmShp_gdf.estimate_utm_crs()  
+
+    # Reproject both GeoDataFrames to the UTM CRS
+    dam_gdf = dam_gdf.to_crs(utm_crs)
+    StrmShp_gdf = StrmShp_gdf.to_crs(utm_crs)
+
+    # Distance calculation
     print('Process_and_Write_Retrospective_Data_for_Dam: Find the closest stream using distance calculation')
     StrmShp_gdf['distance'] = StrmShp_gdf.distance(dam_gdf.geometry.iloc[0])
     StrmShp_gdf = StrmShp_gdf.sort_values('distance')
     StrmShp_filtered_gdf = StrmShp_gdf.head(1)
+
+    # convert StrmShp_gdf and StrmShp_filtered_gdf back to it's original CRS for ARC to use
+    StrmShp_gdf = StrmShp_gdf.to_crs(StrmShp_crs)
+    StrmShp_filtered_gdf = StrmShp_filtered_gdf.to_crs(StrmShp_crs)
 
     # # Use the 'LINKNO' and 'DSLINKNO' fields to find the stream upstream and downstream of the dam
     # current_rivid = StrmShp_filtered_gdf['LINKNO'].values[0]
@@ -116,7 +128,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     # Check if fdc_df is empty
     print('Process_and_Write_Retrospective_Data_for_Dam: Check if fdc_df is empty')
     if fdc_df.empty:
-        print(f"Skipping processing for {DEM_Tile} because fdc_df is empty.")
+        print(f"Skipping processing for {dam_id} because fdc_df is empty.")
         CSV_File_Name = None
         OutShp_File_Name = None
         rivids_int = None
@@ -155,7 +167,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     # Check if rp_df is empty
     print('Process_and_Write_Retrospective_Data_for_Dam: Check if rp_df is empty')
     if rp_df.empty:
-        print(f"Skipping processing for {DEM_Tile} because rp_df is empty.")
+        print(f"Skipping processing for {dam_id} because rp_df is empty.")
         CSV_File_Name = None
         OutShp_File_Name = None
         rivids_int = None
@@ -188,7 +200,15 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     for col in final_df.columns:
         if col in ['qout_max','rp100']:
             final_df[f'{col}_premium'] = round(final_df[col]*1.5, 3)
+
+    # add the known_baseflow column to the final_df
+    if known_baseflow is not None:
+        final_df['known_baseflow'] = known_baseflow
     
+    # add the known_channel_forming_discharge column to the final_df
+    if known_channel_forming_discharge is not None:
+        final_df['known_channel_forming_discharge'] = known_channel_forming_discharge
+
     print(final_df)
 
     # Write the final Dask DataFrame to CSV

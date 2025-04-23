@@ -58,8 +58,14 @@ def Download_ESA_WorldLandCover(output_folder, geom, year):
 
     # let's merge the list of tiles together
     LandCoverFile = os.path.join(output_folder,"merged_ESA_LC.tif")
-    # Use gdal.Warp to merge the rasters
-    gdal.Warp(LandCoverFile, LC_List, options=gdal.WarpOptions(format='GTiff'))
+    
+    # Merge rasters
+    merged_raster = gdal.Warp(LandCoverFile, LC_List, options=gdal.WarpOptions(format='GTiff'))
+
+    # Ensure data is written and file is closed properly
+    if merged_raster:
+        merged_raster.FlushCache()  # Save changes
+        merged_raster = None  # Close dataset
 
     return LandCoverFile
 

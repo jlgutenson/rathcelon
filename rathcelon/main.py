@@ -37,8 +37,12 @@ import geopandas as gpd
 import fiona
 from shapely.geometry import shape
 import networkx as nx
+from pathlib import Path
+import platform
 from shapely.geometry import Point, LineString, MultiLineString
 from shapely.ops import nearest_points, linemerge, split
+import shutil
+import stat
 import numpy as np
 
 # local imports
@@ -54,7 +58,7 @@ def Process_Geospatial_Data(ARC_Folder,
                             VDT_File, Curve_File, ARC_BathyFile, Dam_StrmShp, 
                             Dam_Reanalsyis_FlowFile, bathy_use_banks, 
                             find_banks_based_on_landcover, create_reach_average_curve_file,
-                            dam_csv, dam_id_field, dam_id,
+                            dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
                             StrmShp_gdf=None):
 
     
@@ -83,7 +87,9 @@ def Process_Geospatial_Data(ARC_Folder,
     elif StrmShp_gdf is not None and os.path.isfile(Dam_StrmShp) is False and os.path.isfile(Dam_Reanalsyis_FlowFile) is False:
         print('Running Function: Process_and_Write_Retrospective_Data_for_Dam')
         (DEM_Reanalsyis_FlowFile, Dam_StrmShp, rivids, Dam_StrmShp_gdf) = HistFlows.Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, 'LINKNO', dam_csv, 
-                                                                                                                                 dam_id_field, dam_id, Dam_Reanalsyis_FlowFile,
+                                                                                                                                 dam_id_field, dam_id, known_baseflow,
+                                                                                                                                 known_channel_forming_discharge,
+                                                                                                                                 Dam_Reanalsyis_FlowFile,
                                                                                                                                  Dam_StrmShp)
 
 
@@ -117,7 +123,7 @@ def Process_Geospatial_Data(ARC_Folder,
     #Create the Bathy Input File
     print('Creating ARC Input File: ' + ARC_FileName_Bathy)
 
-    if bathy_use_banks is False:
+    if bathy_use_banks is False and known_baseflow is None:
         COMID_Param = 'COMID'
         Q_BF_Param = 'qout_median'
         Q_Param = 'rp100_premium'
@@ -127,7 +133,7 @@ def Process_Geospatial_Data(ARC_Folder,
                                           VDT_File, Curve_File, ManningN, ARC_BathyFile, 
                                           Dam_StrmShp, bathy_use_banks, 
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
-    elif bathy_use_banks is True:
+    elif bathy_use_banks is True and known_baseflow is None:
         COMID_Param = 'COMID'
         Q_BF_Param = 'rp2'
         Q_Param = 'rp100_premium'
@@ -137,6 +143,50 @@ def Process_Geospatial_Data(ARC_Folder,
                                           VDT_File, Curve_File, ManningN, ARC_BathyFile, 
                                           Dam_StrmShp, bathy_use_banks, 
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
+    elif bathy_use_banks is False and known_baseflow is not None and known_channel_forming_discharge is None:
+        COMID_Param = 'COMID'
+        Q_BF_Param = 'known_baseflow'
+        Q_Param = 'rp100_premium'
+        Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
+                                          COMID_Param, Q_BF_Param, Q_Param, 
+                                          STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
+                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          Dam_StrmShp, bathy_use_banks, 
+                                          find_banks_based_on_landcover, create_reach_average_curve_file)
+    elif bathy_use_banks is True and known_channel_forming_discharge is not None and known_baseflow is None:
+        COMID_Param = 'COMID'
+        Q_BF_Param = 'known_channel_forming_discharge'
+        Q_Param = 'rp100_premium'
+        Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
+                                          COMID_Param, Q_BF_Param, Q_Param, 
+                                          STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
+                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          Dam_StrmShp, bathy_use_banks, 
+                                          find_banks_based_on_landcover, create_reach_average_curve_file)
+    elif bathy_use_banks is False and known_baseflow is not None and known_channel_forming_discharge is not None:
+        COMID_Param = 'COMID'
+        Q_BF_Param = 'known_baseflow'
+        Q_Param = 'rp100_premium'
+        Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
+                                          COMID_Param, Q_BF_Param, Q_Param, 
+                                          STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
+                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          Dam_StrmShp, bathy_use_banks, 
+                                          find_banks_based_on_landcover, create_reach_average_curve_file)
+    elif bathy_use_banks is True and known_channel_forming_discharge is not None and known_baseflow is not None:
+        COMID_Param = 'COMID'
+        Q_BF_Param = 'known_channel_forming_discharge'
+        Q_Param = 'rp100_premium'
+        Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
+                                          COMID_Param, Q_BF_Param, Q_Param, 
+                                          STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
+                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          Dam_StrmShp, bathy_use_banks, 
+                                          find_banks_based_on_landcover, create_reach_average_curve_file)
+    else:
+        print('Error: bathy_use_banks and known_baseflow are both set to True.  Please check your inputs.\n')
+        print('You want to pair known_baseflow with bathy_use_banks set to False.')
+        sys.exit("Terminating: Invalid input combination.")
 
     
     return ARC_FileName_Bathy, Dam_Reanalsyis_FlowFile, Dam_StrmShp
@@ -507,7 +557,7 @@ def walk_stream_for_point(line, target_distance):
 
     return Point(line.coords[-1])  # Return last point if over length
 
-def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, dam_reanalysis_flowfile, STRM_Raster_File, number_of_cross_sections=3):
+def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, dam_reanalysis_flowfile, STRM_Raster_File, known_baseflow, number_of_cross_sections=3):
     """
     Finds a location on the stream network that is downstream of the dam at specified increments and saves it as a shapefile.
 
@@ -534,7 +584,10 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
 
     # Merge flow parameters
     merged_df = pd.merge(curve_data_df, dam_reanalysis_df, on='COMID', how='left')
-    merged_df['tw_rp2'] = merged_df['tw_a'] * (merged_df['rp2'] ** merged_df['tw_b'])
+    if known_baseflow is None:
+        merged_df['tw_rp2'] = merged_df['tw_a'] * (merged_df['rp2'] ** merged_df['tw_b'])
+    else:
+        merged_df['tw_known_baseflow'] = merged_df['tw_a'] * (known_baseflow ** merged_df['tw_b'])
 
 
     # Read stream shapefile and dam locations
@@ -556,7 +609,7 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
     dam_gdf = dam_gdf.reset_index(drop=True)
     dam_point = dam_gdf.geometry.iloc[0]
 
-    # **1️⃣ Build a Directed Graph Using LINKNO and DSLINKNO**
+    # **1. Build a Directed Graph Using LINKNO and DSLINKNO**
     G = nx.DiGraph()
     
     for _, row in Dam_StrmShp_gdf.iterrows():
@@ -567,17 +620,20 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
         if ds_link_id > 0:  # Ignore terminal reaches
             G.add_edge(link_id, ds_link_id, geometry=geometry, weight=geometry.length)
 
-    # **2️⃣ Find the Closest Stream to the Dam**
+    # **2. Find the Closest Stream to the Dam**
     Dam_StrmShp_gdf['distance'] = Dam_StrmShp_gdf.distance(dam_point)
     closest_stream = Dam_StrmShp_gdf.loc[Dam_StrmShp_gdf['distance'].idxmin()]
     start_link = closest_stream['LINKNO']
 
     # Filter the top-width data to the closest stream and find the median
     merged_df = merged_df[merged_df['COMID']==start_link]
-    tw_median = merged_df.groupby('COMID')['tw_rp2'].median()
+    if known_baseflow is None:
+        tw_median = merged_df.groupby('COMID')['tw_rp2'].median()
+    else:
+        tw_median = merged_df.groupby('COMID')['tw_known_baseflow'].median()
     
 
-
+    # **3. Calculate the Top Width (tw) for the Closest Stream and find the locations of interest on the stream network**
     # Select tw_median based on closest stream 'COMID'
     tw = tw_median.get(start_link, 100)  # Default to 50m if not found
 
@@ -593,7 +649,7 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
 
     dam_ids = []
     link_nos = []
-    downstream_points = []
+    points_of_interest = []
 
     # Loop for each downstream cross-section
     for i in range(1, number_of_cross_sections + 1):
@@ -664,18 +720,89 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
         )
         dam_ids.append(dam_id)
         link_nos.append(current_link)
-        downstream_points.append(downstream_point)
+        points_of_interest.append(downstream_point)
 
     # downstream_points now contains cross-sections spaced exactly tw meters apart along the stream.
 
  
+    # now let's find the upstream point that is 1/4 of the top width upstream of the dam location
+    # Get the dam’s intersection point on the stream
+    current_point = nearest_points(closest_stream.geometry, dam_point)[0]
+    # Assume current_link is the stream segment containing current_point (the dam intersection)
+    current_link = start_link
+    # calculate 1/4 tw to look upstream of the dam location to use upstream water surface elevation and known discharge to estimate dam height
+    tw_upstream = tw / 4.0
+    remaining_distance_to_travel = tw_upstream
+
+    print(f"Calculating point {remaining_distance_to_travel} meters upstream of the dam.")
+
+    while remaining_distance_to_travel > 0:
+        # Get geometry of the current link segment (self-contained)
+        # Assumes you are storing geometry from current_link to one of its neighbors — adjust if needed
+        # You may need to maintain a mapping or use a convention to fetch a self-link geometry if it's not available in edges
+        if 'geometry' in G.nodes[current_link]:
+            seg_geom = G.nodes[current_link]['geometry']
+        else:
+            # Fallback: get one of the out_edges or in_edges that contains this geometry
+            # For now, we use a simple assumption: pull from an out_edge or in_edge
+            candidate_edges = list(G.out_edges(current_link, data=True)) + list(G.in_edges(current_link, data=True))
+            for u, v, data in candidate_edges:
+                if 'geometry' in data:
+                    seg_geom = data['geometry']
+                    break
+            else:
+                raise ValueError(f"No geometry found for link {current_link}")
+
+        # Prepare geometry
+        if seg_geom.geom_type.startswith("Multi"):
+            seg_coords = list(linemerge(seg_geom).coords)
+        else:
+            seg_coords = list(seg_geom.coords)
+
+        # Ensure the geometry direction ends at current_point (reverse if needed)
+        if not Point(seg_coords[-1]).equals_exact(current_point, tolerance=0.2):
+            seg_coords.reverse()
+
+        seg_line = LineString(seg_coords)
+
+        # STEP 1: Measure how far upstream we can go in this segment
+        proj_distance = seg_line.project(current_point)
+        if proj_distance >= remaining_distance_to_travel:
+            # We have enough upstream length within current_link itself
+            current_point = seg_line.interpolate(proj_distance - remaining_distance_to_travel)
+            remaining_distance_to_travel = 0
+        else:
+            # Move to the start of the segment
+            remaining_distance_to_travel -= proj_distance
+            current_point = Point(seg_coords[0])  # Start of the upstream segment
+
+            # Now move to upstream link
+            upstream_edges = list(G.in_edges(current_link, data=True))
+            if not upstream_edges:
+                raise ValueError(f"Ran out of stream while looking upstream from {current_link}")
+            
+            # Pick first upstream link — modify if smarter selection needed
+            next_link = upstream_edges[0][0]
+            current_link = next_link
+
+        # At this point, current_point has moved exactly tw/4 meters upstream from its previous location.
+        # Record the result (convert to EPSG:4326 if needed).
+        upstream_point = (
+            gpd.GeoSeries([current_point], crs=projected_crs)
+            .to_crs("EPSG:4326")
+            .geometry.iloc[0]
+        )
+        dam_ids.append(dam_id)
+        link_nos.append(current_link)
+        points_of_interest.append(upstream_point)
+
 
     # **Save the Downstream Points as a Shapefile**
-    downstream_gdf = gpd.GeoDataFrame({'dam_id': dam_ids, 'LINKNO': link_nos, 'geometry': downstream_points}, crs="EPSG:4326")
+    downstream_gdf = gpd.GeoDataFrame({'dam_id': dam_ids, 'LINKNO': link_nos, 'geometry': points_of_interest}, crs="EPSG:4326")
 
     # print(f"✅ Downstream points saved to: {output_shapefile}")
 
-    # **4️⃣ Find Nearest VDT and Curve Data Points**
+    # **4. Find Nearest VDT and Curve Data Points to the points of interest**
     # Compute lat/lon for curve data
     (minx, miny, maxx, maxy, dx, dy, _, _, _, _) = Get_Raster_Details(STRM_Raster_File)
     cellsize_x, cellsize_y = abs(float(dx)), abs(float(dy))
@@ -727,7 +854,7 @@ def find_stream_cells_at_increments_below_dam(CurveParam_File, VDT_File, dam_csv
 def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_Folder, FLOW_Folder, 
                      VDT_Folder, ARC_Folder, BathyFileFolder, ManningN, bathy_use_banks, 
                      find_banks_based_on_landcover, create_reach_average_curve_file,
-                     dam_csv, dam_id_field, dam_id,
+                     dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
                      StrmShp_gdf=None):
 
     if DEM.endswith(".tif") or DEM.endswith(".img"):
@@ -775,26 +902,26 @@ def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_
                                                                                             VDT_File, Curve_File, ARC_BathyFile, Dam_StrmShp, 
                                                                                             Dam_Reanalsyis_FlowFile, bathy_use_banks, 
                                                                                             find_banks_based_on_landcover, create_reach_average_curve_file,
-                                                                                            dam_csv, dam_id_field, dam_id,
+                                                                                            dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
                                                                                             StrmShp_gdf)  
 
         # read in the reanalysis streamflow and break the code if the dataframe is empty or if the streamflow is all 0
         DEM_Reanalsyis_FlowFile_df = pd.read_csv(DEM_Reanalsyis_FlowFile)
         if DEM_Reanalsyis_FlowFile_df.empty is True or DEM_Reanalsyis_FlowFile_df['qout_max'].mean() <= 0 or len(DEM_Reanalsyis_FlowFile_df.index)==0:
-            print(f"Results for {DEM} are not possible because we don't have streamflow estimates...")
+            print(f"Dam_Assessment: Results for {DEM} are not possible because we don't have streamflow estimates...")
             return
 
         
         # Create our Curve and VDT Database data
         if os.path.exists(ARC_BathyFile) == False or os.path.exists(VDT_File) == False or os.path.exists(Curve_File) == False:
-            print('Cannot find bathy file, so creating ' + ARC_BathyFile)
+            print('Dam_Assessment: Cannot find bathy file, so creating ' + ARC_BathyFile)
             arc = Arc(ARC_FileName_Bathy)
             arc.run() # Runs ARC
         
         # Now we need to use the Dam_StrmShp and VDT data to find the stream cells at distance increments below the dam
-        downstream_gdf, vdt_gdf, curve_data_gdf = find_stream_cells_at_increments_below_dam(Curve_File, VDT_File, dam_csv, dam_id_field, dam_id,
-                                                                                            Dam_StrmShp, Dam_Reanalsyis_FlowFile,
-                                                                                            STRM_File_Clean)
+        downstream_gdf, vdt_gdf, curve_data_gdf = find_stream_cells_at_increments_above_and_below_dam(Curve_File, VDT_File, dam_csv, dam_id_field, dam_id,
+                                                                                                      Dam_StrmShp, Dam_Reanalsyis_FlowFile,
+                                                                                                      STRM_File_Clean, known_baseflow)
         
         # output the results to shapefiles
         vdt_gdf.to_file(Local_VDT_File)
@@ -817,6 +944,12 @@ def process_dam(dam_dict):
     # let's tell ARC whether we want the curvefile parameters to be the same for each reach or vary by stream cell
     create_reach_average_curve_file = dam_dict['create_reach_average_curve_file']
 
+    # if we have a known baseflow, we will add it to the streamflow file and use it to estimate bathymetry
+    known_baseflow = dam_dict['known_baseflow']
+
+    # if we have a known channel forming discharge, we will add it to the streamflow file and use it to estimate bathymetry
+    known_channel_forming_discharge = dam_dict['known_channel_forming_discharge']
+
 
     #Folder Management
     Output_Dir = dam_dict['output_dir']
@@ -824,7 +957,7 @@ def process_dam(dam_dict):
     dam_csv = dam_dict['dam_csv']
     dam_id_field = dam_dict['dam_id_field']
     dam_id = dam_dict['dam_id']
-    Dam_Folder = dam_dict['dem_dir']
+    DEM_Folder = dam_dict['dem_dir']
     ARC_Folder = os.path.join(Output_Dir, str(dam), 'ARC_InputFiles')
     BathyFileFolder = os.path.join(Output_Dir, str(dam), 'Bathymetry')
     STRM_Folder = os.path.join(Output_Dir, str(dam), 'STRM')
@@ -852,7 +985,7 @@ def process_dam(dam_dict):
     Create_BaseLine_Manning_n_File_ESA(ManningN)
     
     #This is the list of all the DEM files we will go through
-    Dam_List = os.listdir(Dam_Folder)
+    DEM_List = os.listdir(DEM_Folder)
 
     # Before we get too far ahead, let's make sure that our DEMs and Flowlines have the same coordinate system
     # we will assume that all DEMs in the DEM list have the same coordinate system
@@ -874,8 +1007,8 @@ def process_dam(dam_dict):
         StrmShp_gdf = StrmShp_gdf[~StrmShp_gdf.geometry.isna()]
 
         print('Converting the coordinate system of the stream file to match the DEM files, if necessary')
-        test_dem = next((file for file in Dam_List if file.endswith('.tif')), None)
-        test_dem_path = os.path.join(Dam_Folder,test_dem)
+        test_dem = next((file for file in DEM_List if file.endswith('.tif')), None)
+        test_dem_path = os.path.join(DEM_Folder,test_dem)
         # Load the DEM file and get its CRS using gdal
         dem_dataset = gdal.Open(test_dem_path)
         dem_proj = dem_dataset.GetProjection()  # Get the projection as a WKT string
@@ -898,13 +1031,39 @@ def process_dam(dam_dict):
         StrmShp_gdf = None   
 
     #Now go through each DEM dataset
-    for Dam in Dam_List:
+    for DEM in DEM_List:
             
-        Dam_Assessment(Dam_Folder, Dam, dam, ESA_LC_Folder, STRM_Folder, LAND_Folder, FLOW_Folder, 
+        Dam_Assessment(DEM_Folder, DEM, dam, ESA_LC_Folder, STRM_Folder, LAND_Folder, FLOW_Folder, 
                      VDT_Folder, ARC_Folder, BathyFileFolder, ManningN, bathy_use_banks, 
                      find_banks_based_on_landcover, create_reach_average_curve_file,
-                     dam_csv, dam_id_field, dam_id,
+                     dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
                      StrmShp_gdf)
+        
+
+    # delete the ESA_LC_Folder and the data in it
+    # Loop through all files in the directory and remove them
+    for file in Path(ESA_LC_Folder).glob("*"):
+        try:
+            if file.is_file():
+                # Adjust file permissions before deletion
+                if platform.system() == "Windows":
+                    os.chmod(file, stat.S_IWRITE)  # Remove read-only attribute on Windows
+                else:
+                    os.chmod(file, stat.S_IWUSR)   # Give user write permission on Unix systems
+                os.remove(file)
+                print(f"process_dam: Deleted file: {file}")
+        except Exception as e:
+            print(f"Error deleting file {file}: {e}")
+    if os.path.exists(ESA_LC_Folder):
+        # Adjust file permissions before deletion
+        if platform.system() == "Windows":
+            os.chmod(ESA_LC_Folder, stat.S_IWRITE)  # Remove read-only attribute on Windows
+        else:
+            os.chmod(ESA_LC_Folder, stat.S_IWUSR)   # Give user write permission on Unix systems
+        os.rmdir(ESA_LC_Folder)
+        print(f"process_dam: Deleted empty folder: {ESA_LC_Folder}")
+    else:
+        print(f"process_dam: Folder {ESA_LC_Folder} does not exist.")
     
     return
     
@@ -935,7 +1094,9 @@ def process_json_input(json_file):
             "flood_waterlc_and_strm_cells":dam.get("flood_waterlc_and_strm_cells", False),
             "process_stream_network": dam.get("process_stream_network", False),
             "find_banks_based_on_landcover": dam.get("find_banks_based_on_landcover", True),
-            "create_reach_average_curve_file": dam.get("create_reach_average_curve_file", False)
+            "create_reach_average_curve_file": dam.get("create_reach_average_curve_file", False),
+            "known_baseflow": dam.get("known_baseflow", None),
+            "known_channel_forming_discharge": dam.get("known_channel_forming_discharge", None),
         }
 
         # Ensure the output directory exists
@@ -964,7 +1125,9 @@ def process_cli_arguments(args):
         "output_dir": normalize_path(output_dir),
         "process_stream_network": args.process_stream_network,
         "find_banks_based_on_landcover": args.find_banks_based_on_landcover,
-        "create_reach_average_curve_file": args.create_reach_average_curve_file
+        "create_reach_average_curve_file": args.create_reach_average_curve_file,
+        "known_baseflow": args.known_baseflow,
+        "known_channel_forming_discharge": args.known_channel_forming_discharge,
     }
 
     # Ensure the output directory exists
@@ -998,6 +1161,8 @@ def main():
     cli_parser.add_argument("--process_stream_network", action="store_true", help="Clean DEM data before processing")
     cli_parser.add_argument("--find_banks_based_on_landcover", action="store_true", help="Use landcover data for finding banks when estimating bathymetry")
     cli_parser.add_argument("--create_reach_average_curve_file", action="store_true", help="Create a reach average curve file instead of one that varies for each stream cell")
+    cli_parser.add_argument("--known_baseflow", type=float, default=None, help="Known baseflow value")
+    cli_parser.add_argument("--known_channel_forming_discharge", type=float, default=None, help="Known channel forming discharge value")
 
     args = parser.parse_args()
 
