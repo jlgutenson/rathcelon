@@ -800,8 +800,6 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
     # **Save the Downstream Points as a Shapefile**
     downstream_gdf = gpd.GeoDataFrame({'dam_id': dam_ids, 'LINKNO': link_nos, 'geometry': points_of_interest}, crs="EPSG:4326")
 
-    # print(f"✅ Downstream points saved to: {output_shapefile}")
-
     # **4. Find Nearest VDT and Curve Data Points to the points of interest**
     # Compute lat/lon for curve data
     (minx, miny, maxx, maxy, dx, dy, _, _, _, _) = Get_Raster_Details(STRM_Raster_File)
