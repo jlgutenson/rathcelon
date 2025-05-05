@@ -54,9 +54,9 @@ def Process_Geospatial_Data(ARC_Folder,
                             ARC_FileName_Bathy, 
                             DEM_File, LandCoverFile, STRM_File, 
                             STRM_File_Clean, LAND_File, 
-                            BathyFileFolder, FLOW_Folder, ManningN, 
+                            BathyFileFolder, FLOW_Folder, XS_Folder, ManningN,
                             VDT_File, Curve_File, ARC_BathyFile, Dam_StrmShp, 
-                            Dam_Reanalsyis_FlowFile, bathy_use_banks, 
+                            Dam_Reanalsyis_FlowFile, XS_File_Out, bathy_use_banks,
                             find_banks_based_on_landcover, create_reach_average_curve_file,
                             dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
                             StrmShp_gdf=None):
@@ -130,7 +130,7 @@ def Process_Geospatial_Data(ARC_Folder,
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
-                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
                                           Dam_StrmShp, bathy_use_banks, 
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is True and known_baseflow is None:
@@ -140,7 +140,7 @@ def Process_Geospatial_Data(ARC_Folder,
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
-                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
                                           Dam_StrmShp, bathy_use_banks, 
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is False and known_baseflow is not None and known_channel_forming_discharge is None:
@@ -150,7 +150,7 @@ def Process_Geospatial_Data(ARC_Folder,
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
-                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
                                           Dam_StrmShp, bathy_use_banks, 
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is True and known_channel_forming_discharge is not None and known_baseflow is None:
@@ -160,7 +160,7 @@ def Process_Geospatial_Data(ARC_Folder,
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
-                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
                                           Dam_StrmShp, bathy_use_banks, 
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is False and known_baseflow is not None and known_channel_forming_discharge is not None:
@@ -170,7 +170,7 @@ def Process_Geospatial_Data(ARC_Folder,
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
-                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
                                           Dam_StrmShp, bathy_use_banks, 
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is True and known_channel_forming_discharge is not None and known_baseflow is not None:
@@ -180,7 +180,7 @@ def Process_Geospatial_Data(ARC_Folder,
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
-                                          VDT_File, Curve_File, ManningN, ARC_BathyFile, 
+                                          VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
                                           Dam_StrmShp, bathy_use_banks, 
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     else:
@@ -220,7 +220,7 @@ def Create_Folder(F):
 
 def Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, COMID_Param, Q_BF_Param, Q_Param, 
                                       STRM_File_Clean, LAND_File, DEM_Reanalsyis_FlowFile, VDT_File, 
-                                      Curve_File, ManningN, ARC_BathyFile,
+                                      Curve_File, XS_Out_File, ManningN, ARC_BathyFile,
                                       DEM_StrmShp, bathy_use_banks, find_banks_based_on_landcover, 
                                       create_reach_average_curve_file):
     
@@ -257,7 +257,7 @@ def Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, COMID_Param,
         out_file.write('\n' + 'FindBanksBasedOnLandCover' + '\t' + str(find_banks_based_on_landcover))
     out_file.write('\n' + 'AROutBATHY	' + ARC_BathyFile)
     out_file.write('\n' + 'BATHY_Out_File	' + ARC_BathyFile)
-
+    out_file.write('\n' + 'XS_Out_File' + '\t' + XS_Out_File)
     out_file.close()
     
 
@@ -557,7 +557,7 @@ def walk_stream_for_point(line, target_distance):
 
     return Point(line.coords[-1])  # Return last point if over length
 
-def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, dam_reanalysis_flowfile, STRM_Raster_File, known_baseflow, number_of_cross_sections=3):
+def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, dam_reanalysis_flowfile, STRM_Raster_File, known_baseflow, number_of_cross_sections=4):
     """
     Finds a location on the stream network that is downstream of the dam at specified increments and saves it as a shapefile.
 
@@ -725,13 +725,13 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
     # downstream_points now contains cross-sections spaced exactly tw meters apart along the stream.
 
  
-    # now let's find the upstream point that is 1/4 of the top width upstream of the dam location
+    # now let's find the upstream point that is 1/8 of the top width upstream of the dam location
     # Get the dam’s intersection point on the stream
     current_point = nearest_points(closest_stream.geometry, dam_point)[0]
     # Assume current_link is the stream segment containing current_point (the dam intersection)
     current_link = start_link
-    # calculate 1/4 tw to look upstream of the dam location to use upstream water surface elevation and known discharge to estimate dam height
-    tw_upstream = tw / 4.0
+    # calculate 1/8 tw to look upstream of the dam location to use upstream water surface elevation and known discharge to estimate dam height
+    tw_upstream = tw / 8
     remaining_distance_to_travel = tw_upstream
 
     print(f"Calculating point {remaining_distance_to_travel} meters upstream of the dam.")
@@ -850,7 +850,7 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
 
 
 def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_Folder, FLOW_Folder, 
-                     VDT_Folder, ARC_Folder, BathyFileFolder, ManningN, bathy_use_banks, 
+                     VDT_Folder, ARC_Folder, BathyFileFolder, XS_Folder, ManningN, bathy_use_banks,
                      find_banks_based_on_landcover, create_reach_average_curve_file,
                      dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
                      StrmShp_gdf=None):
@@ -882,6 +882,7 @@ def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_
         
         ARC_BathyFile = os.path.join(BathyFileFolder, str(dam_id) + '_ARC_Bathy.tif')
 
+        XS_Out_File = os.path.join(XS_Folder, str(dam_id) + '_XS_Out.txt')
         
         #Download and Process Land Cover Data
         LandCoverFile = ''
@@ -896,9 +897,9 @@ def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_
                                                                                             ARC_FileName_Bathy, 
                                                                                             DEM_File, LandCoverFile, STRM_File, 
                                                                                             STRM_File_Clean, LAND_File, 
-                                                                                            BathyFileFolder, FLOW_Folder, ManningN, 
+                                                                                            BathyFileFolder, FLOW_Folder, XS_Folder, ManningN,
                                                                                             VDT_File, Curve_File, ARC_BathyFile, Dam_StrmShp, 
-                                                                                            Dam_Reanalsyis_FlowFile, bathy_use_banks, 
+                                                                                            Dam_Reanalsyis_FlowFile, XS_Out_File, bathy_use_banks,
                                                                                             find_banks_based_on_landcover, create_reach_average_curve_file,
                                                                                             dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
                                                                                             StrmShp_gdf)  
@@ -963,7 +964,8 @@ def process_dam(dam_dict):
     FLOW_Folder = os.path.join(Output_Dir, str(dam), 'FLOW')
     VDT_Folder = os.path.join(Output_Dir, str(dam), 'VDT')
     ESA_LC_Folder = os.path.join(Output_Dir, str(dam), 'ESA_LC')
-    
+    XS_Folder = os.path.join(Output_Dir, str(dam), 'XS')
+
     #Create Folders
     # Create_Folder(watershed)
     Create_Folder(ESA_LC_Folder)
@@ -973,6 +975,7 @@ def process_dam(dam_dict):
     Create_Folder(VDT_Folder)
     Create_Folder(ARC_Folder)
     Create_Folder(BathyFileFolder)
+    Create_Folder(XS_Folder)
     
     #Datasets that can be good for a large domain
     StrmSHP = dam_dict['flowline']
@@ -1032,7 +1035,7 @@ def process_dam(dam_dict):
     for DEM in DEM_List:
             
         Dam_Assessment(DEM_Folder, DEM, dam, ESA_LC_Folder, STRM_Folder, LAND_Folder, FLOW_Folder, 
-                     VDT_Folder, ARC_Folder, BathyFileFolder, ManningN, bathy_use_banks, 
+                     VDT_Folder, ARC_Folder, BathyFileFolder, XS_Folder, ManningN, bathy_use_banks,
                      find_banks_based_on_landcover, create_reach_average_curve_file,
                      dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
                      StrmShp_gdf)
