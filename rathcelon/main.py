@@ -121,6 +121,13 @@ def Process_Geospatial_Data(ARC_Folder,
 
 
     #Create the Bathy Input File
+
+    # Let's extract the weir length real quick
+    dam_gdf = pd.read_csv(dam_csv)
+    # Filter to the specific dam
+    dam_gdf = dam_gdf[dam_gdf[dam_id_field] == dam_id]
+    weir_length = dam_gdf['weir_length'].values[0]
+
     print('Creating ARC Input File: ' + ARC_FileName_Bathy)
 
     if bathy_use_banks is False and known_baseflow is None:
@@ -131,7 +138,7 @@ def Process_Geospatial_Data(ARC_Folder,
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
                                           VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
-                                          Dam_StrmShp, bathy_use_banks, 
+                                          Dam_StrmShp, bathy_use_banks, weir_length,
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is True and known_baseflow is None:
         COMID_Param = 'COMID'
@@ -141,7 +148,7 @@ def Process_Geospatial_Data(ARC_Folder,
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
                                           VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
-                                          Dam_StrmShp, bathy_use_banks, 
+                                          Dam_StrmShp, bathy_use_banks, weir_length,
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is False and known_baseflow is not None and known_channel_forming_discharge is None:
         COMID_Param = 'COMID'
@@ -151,7 +158,7 @@ def Process_Geospatial_Data(ARC_Folder,
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
                                           VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
-                                          Dam_StrmShp, bathy_use_banks, 
+                                          Dam_StrmShp, bathy_use_banks, weir_length,
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is True and known_channel_forming_discharge is not None and known_baseflow is None:
         COMID_Param = 'COMID'
@@ -161,7 +168,7 @@ def Process_Geospatial_Data(ARC_Folder,
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
                                           VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
-                                          Dam_StrmShp, bathy_use_banks, 
+                                          Dam_StrmShp, bathy_use_banks, weir_length,
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is False and known_baseflow is not None and known_channel_forming_discharge is not None:
         COMID_Param = 'COMID'
@@ -171,7 +178,7 @@ def Process_Geospatial_Data(ARC_Folder,
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
                                           VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
-                                          Dam_StrmShp, bathy_use_banks, 
+                                          Dam_StrmShp, bathy_use_banks, weir_length,
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     elif bathy_use_banks is True and known_channel_forming_discharge is not None and known_baseflow is not None:
         COMID_Param = 'COMID'
@@ -181,7 +188,7 @@ def Process_Geospatial_Data(ARC_Folder,
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
                                           VDT_File, Curve_File, XS_File_Out, ManningN, ARC_BathyFile,
-                                          Dam_StrmShp, bathy_use_banks, 
+                                          Dam_StrmShp, bathy_use_banks, weir_length,
                                           find_banks_based_on_landcover, create_reach_average_curve_file)
     else:
         print('Error: bathy_use_banks and known_baseflow are both set to True.  Please check your inputs.\n')
@@ -221,7 +228,7 @@ def Create_Folder(F):
 def Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, COMID_Param, Q_BF_Param, Q_Param, 
                                       STRM_File_Clean, LAND_File, DEM_Reanalsyis_FlowFile, VDT_File, 
                                       Curve_File, XS_Out_File, ManningN, ARC_BathyFile,
-                                      DEM_StrmShp, bathy_use_banks, find_banks_based_on_landcover, 
+                                      DEM_StrmShp, bathy_use_banks, weir_length, find_banks_based_on_landcover,
                                       create_reach_average_curve_file):
     
     out_file = open(ARC_FileName_Bathy,'w')
@@ -235,7 +242,8 @@ def Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, COMID_Param,
     out_file.write('\n' + 'Flow_File_BF	' + Q_BF_Param)
     out_file.write('\n' + 'Flow_File_QMax	' + Q_Param)
     out_file.write('\n' + 'Spatial_Units	deg')
-    out_file.write('\n' + 'X_Section_Dist	5000.0')
+    x_section_dist = round(2 * weir_length,0) # set the cross-section distance to two x weir length
+    out_file.write('\n' + 'X_Section_Dist	' + str(x_section_dist))
     out_file.write('\n' + 'Degree_Manip	6.1')
     out_file.write('\n' + 'Degree_Interval	1.5')
     out_file.write('\n' + 'Low_Spot_Range	2')
