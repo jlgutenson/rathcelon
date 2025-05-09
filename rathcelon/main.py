@@ -39,8 +39,9 @@ from shapely.geometry import shape
 import networkx as nx
 from pathlib import Path
 import platform
-from shapely.geometry import Point, LineString, MultiLineString
-from shapely.ops import nearest_points, linemerge, split
+from pyproj import CRS, Transformer
+from shapely.geometry import Point, LineString, MultiLineString, shape, mapping
+from shapely.ops import nearest_points, linemerge, split, transform
 import shutil
 import stat
 import numpy as np
@@ -896,7 +897,19 @@ def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_
         LandCoverFile = ''
         if not os.path.exists(LAND_File):
             (lon_1, lat_1, lon_2, lat_2, dx, dy, ncols, nrows, geoTransform, Rast_Projection) = Get_Raster_Details(DEM_File)
+            
+            # Get geometry in original projection
             geom = ESA.Get_Polygon_Geometry(lon_1, lat_1, lon_2, lat_2)
+
+            # Check if raster projection is WGS 84
+            raster_crs = CRS.from_wkt(Rast_Projection)
+            wgs84_crs = CRS.from_epsg(4326)
+
+            if raster_crs != wgs84_crs:
+                # Convert geometry to WGS 84
+                transformer = Transformer.from_crs(raster_crs, wgs84_crs, always_xy=True)
+                geom = transform(transformer.transform, geom)
+
             LandCoverFile = ESA.Download_ESA_WorldLandCover(ESA_LC_Folder, geom, 2021)
 
         # This function sets-up the Input files for ARC and FloodSpreader
