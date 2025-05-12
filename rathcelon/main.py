@@ -614,7 +614,7 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
     if dam_gdf.empty:
         raise ValueError("No matching dam found for the given dam_id.")
 
-    dam_gdf = dam_gdf.reset_index(drop=True)
+    dam_dgf = dam_gdf.reset_index(drop=True)
     dam_point = dam_gdf.geometry.iloc[0]
 
     # **1. Build a Directed Graph Using LINKNO and DSLINKNO**
@@ -659,10 +659,12 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
     link_nos = []
     points_of_interest = []
 
+    weir_length = dam_gdf['weir_length'].values[0]
+
     # Loop for each downstream cross-section
     for i in range(1, number_of_cross_sections + 1):
-        # We want to move exactly tw meters from the current point
-        remaining_distance_to_travel = tw
+        # We want to move downstream the length of the weir from the current point
+        remaining_distance_to_travel = weir_length
 
         print(f"Calculating point {i*remaining_distance_to_travel} meters downstream of the dam.")
         
@@ -738,9 +740,9 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
     current_point = nearest_points(closest_stream.geometry, dam_point)[0]
     # Assume current_link is the stream segment containing current_point (the dam intersection)
     current_link = start_link
-    # calculate 1/8 tw to look upstream of the dam location to use upstream water surface elevation and known discharge to estimate dam height
-    tw_upstream = tw / 8
-    remaining_distance_to_travel = tw_upstream
+    # calculate 1/8 the weir length to look upstream of the dam location to use upstream water surface elevation and known discharge to estimate dam height
+    wl_upstream = weir_length / 8
+    remaining_distance_to_travel = wl_upstream
 
     print(f"Calculating point {remaining_distance_to_travel} meters upstream of the dam.")
 

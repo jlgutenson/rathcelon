@@ -725,13 +725,13 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
     # downstream_points now contains cross-sections spaced exactly tw meters apart along the stream.
 
  
-    # now let's find the upstream point that is 1/4 of the top width upstream of the dam location
+    # now let's find the upstream point that is 1/8 of the top width upstream of the dam location
     # Get the dam’s intersection point on the stream
     current_point = nearest_points(closest_stream.geometry, dam_point)[0]
     # Assume current_link is the stream segment containing current_point (the dam intersection)
     current_link = start_link
-    # calculate 1/4 tw to look upstream of the dam location to use upstream water surface elevation and known discharge to estimate dam height
-    tw_upstream = tw / 4.0
+    # calculate 1/8 tw to look upstream of the dam location to use upstream water surface elevation and known discharge to estimate dam height
+    tw_upstream = tw / 8
     remaining_distance_to_travel = tw_upstream
 
     print(f"Calculating point {remaining_distance_to_travel} meters upstream of the dam.")
