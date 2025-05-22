@@ -115,59 +115,64 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     ODP_S3_BUCKET_REGION = 'us-west-2'
     s3 = s3fs.S3FileSystem(anon=True, client_kwargs=dict(region_name=ODP_S3_BUCKET_REGION))
 
-    # Load FDC data from S3 using Dask
-    # Convert to a list of integers
-    print('Process_and_Write_Retrospective_Data_for_Dam: Load FDC data from S3 using Dask')
-    fdc_s3_uri = 's3://geoglows-v2-retrospective/fdc.zarr'
+    # # Load FDC data from S3 using Dask
+    # # Convert to a list of integers
+    fdc_s3_uri = 's3://geoglows-v2/retrospective/fdc.zarr'
     fdc_s3store = s3fs.S3Map(root=fdc_s3_uri, s3=s3, check=False)
     p_exceedance = [float(50.0), float(0.0)]
-    fdc_ds = xr.open_zarr(fdc_s3store).sel(p_exceed=p_exceedance, river_id=rivids_str)
+    fdc_ds = xr.open_zarr(fdc_s3store).sel(p_exceed=p_exceedance, river_id=rivids_int)
+
+
     # Convert Xarray to Dask DataFrame
     fdc_df = fdc_ds.to_dataframe().reset_index()
 
+
     # Check if fdc_df is empty
-    print('Process_and_Write_Retrospective_Data_for_Dam: Check if fdc_df is empty')
     if fdc_df.empty:
-        print(f"Skipping processing for {dam_id} because fdc_df is empty.")
+        print(f"Skipping processing for {DEM_Tile} because fdc_df is empty.")
         CSV_File_Name = None
         OutShp_File_Name = None
         rivids_int = None
         StrmShp_filtered_gdf = None
         return (CSV_File_Name, OutShp_File_Name, rivids_int, StrmShp_filtered_gdf)
 
-    print('Process_and_Write_Retrospective_Data_for_Dam: qout_median qout_max river_id')
     # Create 'qout_median' column where 'p_exceed' is 50.0
-    fdc_df.loc[fdc_df['p_exceed'] == 50.0, 'qout_median'] = fdc_df['fdc']
+    fdc_df.loc[fdc_df['p_exceed'] == 50.0, 'qout_median'] = fdc_df['hourly_annual']
     # Create 'qout_max' column where 'p_exceed' is 100.0
-    fdc_df.loc[fdc_df['p_exceed'] == 0.0, 'qout_max'] = fdc_df['fdc']
+    fdc_df.loc[fdc_df['p_exceed'] == 0.0, 'qout_max'] = fdc_df['hourly_annual']
     # Group by 'river_id' and aggregate 'qout_median' and 'qout_max' by taking the non-null value
     fdc_df = fdc_df.groupby('river_id').agg({
         'qout_median': 'max',  # or use 'max' as both approaches would work
         'qout_max': 'max'
     }).reset_index()
 
-    # making our index for this dataframe match the recurrence interval index 
-    fdc_df['rivid'] = fdc_df['river_id'].astype(int)
-    # Drop two columns from the DataFrame
-    fdc_df = fdc_df.drop(['river_id'], axis=1)
-    fdc_df = fdc_df.set_index('rivid')
+    # set the dataframe index
+    fdc_df = fdc_df.set_index('river_id')
 
     # round the values
     fdc_df['qout_median'] = fdc_df['qout_median'].round(3)
     fdc_df['qout_max'] = fdc_df['qout_max'].round(3)
+
+    # drop all the columns except for the river_id, qout_median, and qout_max
+    fdc_df = fdc_df[['qout_median', 'qout_max']]
     
     # Load return periods data from S3 using Dask
-    rp_s3_uri = 's3://geoglows-v2-retrospective/return-periods.zarr'
+    rp_s3_uri = 's3://geoglows-v2/retrospective/return-periods.zarr'
     rp_s3store = s3fs.S3Map(root=rp_s3_uri, s3=s3, check=False)
-    rp_ds = xr.open_zarr(rp_s3store).sel(rivid=rivids_int)
+    rp_ds = xr.open_zarr(rp_s3store).sel(river_id=rivids_int)
     
     # Convert Xarray to Dask DataFrame and pivot
     rp_df = rp_ds.to_dataframe().reset_index()
 
+    # find the maximum between the gumbel and logpearson3 return periods and label this new column 'return_period_flow'
+    rp_df['return_period_flow'] = rp_df[['gumbel', 'logpearson3']].mean(axis=1).round(3)
+
+    # keep just the column 'return_period_flow'
+    rp_df = rp_df[['river_id', 'return_period', 'return_period_flow']]
+    
     # Check if rp_df is empty
-    print('Process_and_Write_Retrospective_Data_for_Dam: Check if rp_df is empty')
     if rp_df.empty:
-        print(f"Skipping processing for {dam_id} because rp_df is empty.")
+        print(f"Skipping processing for {DEM_Tile} because rp_df is empty.")
         CSV_File_Name = None
         OutShp_File_Name = None
         rivids_int = None
@@ -178,7 +183,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     rp_df['return_period'] = rp_df['return_period'].astype('category')
     
     # Pivot the table
-    rp_pivot_df = rp_df.pivot_table(index='rivid', columns='return_period', values='return_period_flow', aggfunc='mean')
+    rp_pivot_df = rp_df.pivot_table(index='river_id', columns='return_period', values='return_period_flow', aggfunc='mean')
 
     # Rename columns to indicate return periods
     rp_pivot_df = rp_pivot_df.rename(columns={col: f'rp{int(col)}' for col in rp_pivot_df.columns})
