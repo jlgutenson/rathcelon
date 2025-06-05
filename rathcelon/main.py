@@ -615,7 +615,7 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
     if dam_gdf.empty:
         raise ValueError("No matching dam found for the given dam_id.")
 
-    dam_dgf = dam_gdf.reset_index(drop=True)
+    dam_gdf = dam_gdf.reset_index(drop=True)
     dam_point = dam_gdf.geometry.iloc[0]
 
     # **1. Build a Directed Graph Using LINKNO and DSLINKNO**
