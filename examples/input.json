@@ -12,7 +12,8 @@
             "process_stream_network": true,
             "find_banks_based_on_landcover": true,
             "create_reach_average_curve_file": false,
-            "known_baseflow": 5.0
+            "known_baseflow": 5.0,
+            "upstream_elevation_change_threshold": 0.1
         },
         {
             "name": "114",
@@ -26,7 +27,8 @@
             "process_stream_network": true,
             "find_banks_based_on_landcover": true,
             "create_reach_average_curve_file": false,
-            "known_baseflow": 100
+            "known_baseflow": 100,
+            "upstream_elevation_change_threshold": 0.1
         },
         {
             "name": "272",
@@ -40,7 +42,8 @@
             "process_stream_network": true,
             "find_banks_based_on_landcover": true,
             "create_reach_average_curve_file": false,
-            "known_baseflow": 10
+            "known_baseflow": 10,
+            "upstream_elevation_change_threshold": 0.1
         }
     ]
 }

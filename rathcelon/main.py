@@ -39,7 +39,7 @@ from shapely.geometry import shape
 import networkx as nx
 from pathlib import Path
 import platform
-from pyproj import CRS, Transformer
+from pyproj import CRS, Geod, Transformer
 from shapely.geometry import Point, LineString, MultiLineString, shape, mapping
 from shapely.ops import nearest_points, linemerge, split, transform
 import shutil
@@ -134,7 +134,7 @@ def Process_Geospatial_Data(ARC_Folder,
     if bathy_use_banks is False and known_baseflow is None:
         COMID_Param = 'COMID'
         Q_BF_Param = 'qout_median'
-        Q_Param = 'rp100_premium'
+        Q_Param = 'rp2'
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
@@ -144,7 +144,7 @@ def Process_Geospatial_Data(ARC_Folder,
     elif bathy_use_banks is True and known_baseflow is None:
         COMID_Param = 'COMID'
         Q_BF_Param = 'rp2'
-        Q_Param = 'rp100_premium'
+        Q_Param = 'rp2'
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
@@ -154,7 +154,7 @@ def Process_Geospatial_Data(ARC_Folder,
     elif bathy_use_banks is False and known_baseflow is not None and known_channel_forming_discharge is None:
         COMID_Param = 'COMID'
         Q_BF_Param = 'known_baseflow'
-        Q_Param = 'rp100_premium'
+        Q_Param = 'rp2'
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
@@ -164,7 +164,7 @@ def Process_Geospatial_Data(ARC_Folder,
     elif bathy_use_banks is True and known_channel_forming_discharge is not None and known_baseflow is None:
         COMID_Param = 'COMID'
         Q_BF_Param = 'known_channel_forming_discharge'
-        Q_Param = 'rp100_premium'
+        Q_Param = 'rp2'
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
@@ -174,7 +174,7 @@ def Process_Geospatial_Data(ARC_Folder,
     elif bathy_use_banks is False and known_baseflow is not None and known_channel_forming_discharge is not None:
         COMID_Param = 'COMID'
         Q_BF_Param = 'known_baseflow'
-        Q_Param = 'rp100_premium'
+        Q_Param = 'rp2'
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
@@ -184,7 +184,7 @@ def Process_Geospatial_Data(ARC_Folder,
     elif bathy_use_banks is True and known_channel_forming_discharge is not None and known_baseflow is not None:
         COMID_Param = 'COMID'
         Q_BF_Param = 'known_channel_forming_discharge'
-        Q_Param = 'rp100_premium'
+        Q_Param = 'rp2'
         Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, 
                                           COMID_Param, Q_BF_Param, Q_Param, 
                                           STRM_File_Clean, LAND_File, Dam_Reanalsyis_FlowFile, 
@@ -268,6 +268,8 @@ def Create_ARC_Model_Input_File_Bathy(ARC_FileName_Bathy, DEM_File, COMID_Param,
     out_file.write('\n' + 'BATHY_Out_File	' + ARC_BathyFile)
     out_file.write('\n' + 'XS_Out_File' + '\t' + XS_Out_File)
     out_file.close()
+
+    return x_section_dist
     
 
 def Create_BaseLine_Manning_n_File(ManningN):
@@ -566,20 +568,80 @@ def walk_stream_for_point(line, target_distance):
 
     return Point(line.coords[-1])  # Return last point if over length
 
-def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, dam_reanalysis_flowfile, STRM_Raster_File, known_baseflow, number_of_cross_sections=4):
+def move_upstream(point, current_link, distance, G):
+    # same logic as your original while-block, but for a fixed 'distance'
+    remaining = distance
+    curr_pt = point
+    link = current_link
+
+    while remaining > 0:
+        # retrieve segment geometry for this link
+        if 'geometry' in G.nodes[link]:
+            seg_geom = G.nodes[link]['geometry']
+        else:
+            # fallback to edge data
+            for u, v, data in list(G.out_edges(link, data=True)) + list(G.in_edges(link, data=True)):
+                if 'geometry' in data:
+                    seg_geom = data['geometry']
+                    break
+            else:
+                raise RuntimeError(f"No geometry found for link {link}")
+
+        # flatten MultiLine if needed
+        if hasattr(seg_geom, 'geom_type') and seg_geom.geom_type.startswith("Multi"):
+            seg_line = linemerge(seg_geom)
+        else:
+            seg_line = seg_geom
+
+        # ensure seg_line endpoints with current point at end
+        coords = list(seg_line.coords)
+        if not Point(coords[-1]).equals_exact(curr_pt, tolerance=1e-6):
+            coords.reverse()
+            seg_line = LineString(coords)
+
+        # how far along this segment we are
+        proj = seg_line.project(curr_pt)
+        available = proj
+
+        if available >= remaining:
+            # can step within this segment
+            new_pt = seg_line.interpolate(proj - remaining)
+            remaining = 0
+        else:
+            # go to upstream end of this segment
+            remaining -= available
+            new_pt = Point(seg_line.coords[0])
+            # step to upstream link
+            ups = list(G.in_edges(link))
+            if not ups:
+                raise RuntimeError("Ran out of upstream network")
+            # pick first, or implement smarter selection
+            link = ups[0][0]
+        curr_pt = new_pt
+    return curr_pt, link
+
+
+def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_File, XS_Out_File, dam_csv, dam_id_field, dam_id, Dam_StrmShp, dam_reanalysis_flowfile, DEM_File, 
+                                                        upstream_elevation_change_threshold, distance_upstream_increment, known_baseflow, Rast_Projection, number_of_cross_sections=4):
     """
     Finds a location on the stream network that is downstream of the dam at specified increments and saves it as a shapefile.
 
     Parameters:
-    - CurveParam_File: str, path to CurveParam file
-    - VDT_File: str, path to VDT file
+    - CurveParam_File: str, path to CurveParam file output by ARC
+    - VDT_File: str, path to VDT file output by ARC
+    - XS_Out_File: str, path to output cross-section file output by ARC
     - dam_csv: str, path to the CSV containing dam locations
     - dam_id_field: str, name of the column identifying dams
     - dam_id: int/str, ID of the dam of interest
     - Dam_StrmShp: str, path to the stream shapefile
     - dam_reanalysis_flowfile: str, path to the flow reanalysis file
     - output_shapefile: str, path to save the output shapefile
-    - number_of_cross_sections: int, number of distances at which to extract points
+    - STRM_Raster_File: str, path to the stream raster file
+    - Rast_Projection: str, original projection of the DEM raster
+    - upstream_elevation_change_threshold: float, elevation change threshold to use when identifying upstream cross-section 
+    - distance_upstream_increment: float, increment distance upstream from the upstream dam cross-section
+    - known_baseflow: float, known baseflow value to use for top width calculation 
+    - number_of_cross_sections: int, number of distances at which to extract points (optional)
 
     Returns:
     - downstream_points: List of shapely.geometry.Point, the calculated downstream locations.
@@ -629,7 +691,7 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
         if ds_link_id > 0:  # Ignore terminal reaches
             G.add_edge(link_id, ds_link_id, geometry=geometry, weight=geometry.length)
 
-    # **2. Find the Closest Stream to the Dam**
+    # Find the Closest Stream to the Dam**
     Dam_StrmShp_gdf['distance'] = Dam_StrmShp_gdf.distance(dam_point)
     closest_stream = Dam_StrmShp_gdf.loc[Dam_StrmShp_gdf['distance'].idxmin()]
     start_link = closest_stream['LINKNO']
@@ -642,7 +704,7 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
         tw_median = merged_df.groupby('COMID')['tw_known_baseflow'].median()
     
 
-    # **3. Calculate the Top Width (tw) for the Closest Stream and find the locations of interest on the stream network**
+    # Calculate the Top Width (tw) for the Closest Stream and find the locations of interest on the stream network**
     # Select tw_median based on closest stream 'COMID'
     tw = tw_median.get(start_link, 100)  # Default to 50m if not found
 
@@ -726,7 +788,6 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
         # Record the result (convert to EPSG:4326 if needed).
         downstream_point = (
             gpd.GeoSeries([current_point], crs=projected_crs)
-            .to_crs("EPSG:4326")
             .geometry.iloc[0]
         )
         dam_ids.append(dam_id)
@@ -734,86 +795,8 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
         points_of_interest.append(downstream_point)
 
     # downstream_points now contains cross-sections spaced exactly tw meters apart along the stream.
-
- 
-    # now let's find the upstream point that is 1/8 of the top width upstream of the dam location
-    # Get the dam’s intersection point on the stream
-    current_point = nearest_points(closest_stream.geometry, dam_point)[0]
-    # Assume current_link is the stream segment containing current_point (the dam intersection)
-    current_link = start_link
-    # calculate 1/8 the weir length to look upstream of the dam location to use upstream water surface elevation and known discharge to estimate dam height
-    wl_upstream = weir_length / 8
-    remaining_distance_to_travel = wl_upstream
-
-    print(f"Calculating point {remaining_distance_to_travel} meters upstream of the dam.")
-
-    while remaining_distance_to_travel > 0:
-        # Get geometry of the current link segment (self-contained)
-        # Assumes you are storing geometry from current_link to one of its neighbors — adjust if needed
-        # You may need to maintain a mapping or use a convention to fetch a self-link geometry if it's not available in edges
-        if 'geometry' in G.nodes[current_link]:
-            seg_geom = G.nodes[current_link]['geometry']
-        else:
-            # Fallback: get one of the out_edges or in_edges that contains this geometry
-            # For now, we use a simple assumption: pull from an out_edge or in_edge
-            candidate_edges = list(G.out_edges(current_link, data=True)) + list(G.in_edges(current_link, data=True))
-            for u, v, data in candidate_edges:
-                if 'geometry' in data:
-                    seg_geom = data['geometry']
-                    break
-            else:
-                raise ValueError(f"No geometry found for link {current_link}")
-
-        # Prepare geometry
-        if seg_geom.geom_type.startswith("Multi"):
-            seg_coords = list(linemerge(seg_geom).coords)
-        else:
-            seg_coords = list(seg_geom.coords)
-
-        # Ensure the geometry direction ends at current_point (reverse if needed)
-        if not Point(seg_coords[-1]).equals_exact(current_point, tolerance=0.2):
-            seg_coords.reverse()
-
-        seg_line = LineString(seg_coords)
-
-        # STEP 1: Measure how far upstream we can go in this segment
-        proj_distance = seg_line.project(current_point)
-        if proj_distance >= remaining_distance_to_travel:
-            # We have enough upstream length within current_link itself
-            current_point = seg_line.interpolate(proj_distance - remaining_distance_to_travel)
-            remaining_distance_to_travel = 0
-        else:
-            # Move to the start of the segment
-            remaining_distance_to_travel -= proj_distance
-            current_point = Point(seg_coords[0])  # Start of the upstream segment
-
-            # Now move to upstream link
-            upstream_edges = list(G.in_edges(current_link, data=True))
-            if not upstream_edges:
-                raise ValueError(f"Ran out of stream while looking upstream from {current_link}")
-            
-            # Pick first upstream link — modify if smarter selection needed
-            next_link = upstream_edges[0][0]
-            current_link = next_link
-
-        # At this point, current_point has moved exactly tw/4 meters upstream from its previous location.
-        # Record the result (convert to EPSG:4326 if needed).
-        upstream_point = (
-            gpd.GeoSeries([current_point], crs=projected_crs)
-            .to_crs("EPSG:4326")
-            .geometry.iloc[0]
-        )
-        dam_ids.append(dam_id)
-        link_nos.append(current_link)
-        points_of_interest.append(upstream_point)
-
-
-    # **Save the Downstream Points as a Shapefile**
-    downstream_gdf = gpd.GeoDataFrame({'dam_id': dam_ids, 'LINKNO': link_nos, 'geometry': points_of_interest}, crs="EPSG:4326")
-
-    # **4. Find Nearest VDT and Curve Data Points to the points of interest**
     # Compute lat/lon for curve data
-    (minx, miny, maxx, maxy, dx, dy, _, _, _, _) = Get_Raster_Details(STRM_Raster_File)
+    (minx, miny, maxx, maxy, dx, dy, _, _, _, _) = Get_Raster_Details(DEM_File)
     cellsize_x, cellsize_y = abs(float(dx)), abs(float(dy))
     lat_base, lon_base = float(maxy) - 0.5 * cellsize_y, float(minx) + 0.5 * cellsize_x
 
@@ -826,45 +809,140 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File, VDT_Fil
     vdt_gdf = gpd.GeoDataFrame(vdt_df, geometry=gpd.points_from_xy(vdt_df['Lon'], vdt_df['Lat']), crs="EPSG:4269")
 
     # Convert all to projected CRS
-    curve_data_gdf, vdt_gdf, downstream_gdf = (gdf.to_crs(projected_crs) for gdf in [curve_data_gdf, vdt_gdf, downstream_gdf])
-    
+    curve_data_gdf, vdt_gdf = (gdf.to_crs(projected_crs) for gdf in [curve_data_gdf, vdt_gdf])
+
+    # use upstream_elevation_change_threshold and distance_upstream_increment to find upstream cross-section
+    # initial intersection point at dam
+    current_point_geom = nearest_points(closest_stream.geometry, dam_point)[0]
+    current_link = start_link
+
+
+    # store dam origin so we can always measure from it
+    origin_point_geom = current_point_geom
+    origin_link       = current_link
+
+    # sample initial BaseElev
+    init_idx = curve_data_gdf.geometry.distance(current_point_geom).idxmin()
+    last_base_elev = curve_data_gdf.at[init_idx, 'BaseElev']
+
+    increment = 1
+    while True:
+        # compute cumulative distance from the dam
+        distance = distance_upstream_increment * increment  
+        # always start from the original dam point/link
+        current_point_geom, current_link = move_upstream(
+            origin_point_geom,
+            origin_link,
+            distance,
+            G
+        )
+
+        # reproject to lat/lon if needed, then record
+        upstream_point = (
+            gpd.GeoSeries([current_point_geom], crs=projected_crs)
+            .geometry.iloc[0]
+        )
+
+        # find nearest BaseElev in curve_data_gdf
+        idx = curve_data_gdf.geometry.distance(current_point_geom).idxmin()
+        current_base_elev = curve_data_gdf.at[idx, 'BaseElev']
+
+
+        # check elevation change
+        elev_diff = abs(current_base_elev - last_base_elev)
+        if elev_diff >= upstream_elevation_change_threshold:
+            print(f"Reached threshold to find upstream cross-section: distance = {distance:.3f} and Δelevation = {elev_diff:.3f}")
+            break
+
+        # update for next iteration
+        last_base_elev = current_base_elev
+        increment += 1
+
+    # record the upstream that matches the elevation change threshold we were looking for
+    dam_ids.append(dam_id)
+    link_nos.append(current_link)
+    points_of_interest.append(upstream_point)
+
+    # **Save the Downstream Points as a Shapefile**
+    downstream_gdf = gpd.GeoDataFrame({'dam_id': dam_ids, 'LINKNO': link_nos, 'geometry': points_of_interest}, crs=projected_crs)
+
+
+    # **4. Find Nearest VDT and Curve Data Points to the points of interest**
     vdt_gdfs = []
     curve_data_gdfs = []
     # Extract target point from the GeoDataFrame
-    for i in downstream_gdf.index:
-        # For example, let's use the first point in the GeoDataFrame as the target point
-        target_point = downstream_gdf.geometry.iloc[i]
-        # Calculate distances to the target point
-        curve_data_gdf['distance'] = curve_data_gdf.geometry.apply(lambda x: target_point.distance(x))
-        vdt_gdf['distance'] = vdt_gdf.geometry.apply(lambda x: target_point.distance(x))
+    for pt in downstream_gdf.geometry:
+        # compute distances
+        dists_curve = curve_data_gdf.geometry.distance(pt)
+        dists_vdt   = vdt_gdf.geometry.distance(pt)
 
-        # Find the nearest VDT and curve point
-        min_distance_curve_data_gdf = curve_data_gdf['distance'].min()
-        min_distance_vdt_gdf = vdt_gdf['distance'].min()
+        # grab the *index* of the nearest cell
+        idx_curve = dists_curve.idxmin()
+        idx_vdt   = dists_vdt.idxmin()
 
-        # Filter the GeoDataFrames to only include the nearest points
-        nearest_curves_data_gdf = curve_data_gdf[(curve_data_gdf['distance']==min_distance_curve_data_gdf)]
-        nearest_vdt_gdf = vdt_gdf[(vdt_gdf['distance']==min_distance_vdt_gdf)]
+        # select exactly that one row
+        nearest_curves = curve_data_gdf.loc[[idx_curve]]
+        nearest_vdt    = vdt_gdf.loc[[idx_vdt]]
 
-        vdt_gdfs.append(nearest_vdt_gdf)
-        curve_data_gdfs.append(nearest_curves_data_gdf)
+        curve_data_gdfs.append(nearest_curves)
+        vdt_gdfs.append(nearest_vdt)
     
     # combine the VDT gdfs and curve data gdfs into one a piece
     vdt_gdf = pd.concat(vdt_gdfs)
     curve_data_gdf = pd.concat(curve_data_gdfs)
 
-    # Dropping the 'distance' column
-    vdt_gdf = vdt_gdf.drop(columns=['distance'])
-    curve_data_gdf = curve_data_gdf.drop(columns=['distance'])
-    
-    return downstream_gdf, vdt_gdf, curve_data_gdf
+    # Open the cross-section file and read the end point lat and lons
+    XS_Out_File_df = pd.read_csv(XS_Out_File, sep='\t')
+
+    (minx, miny, maxx, maxy, dx, dy, _, _, _, _) = Get_Raster_Details(DEM_File)
+    cellsize_x, cellsize_y = abs(float(dx)), abs(float(dy))
+    lat_base, lon_base = float(maxy) - 0.5 * cellsize_y, float(minx) + 0.5 * cellsize_x
+
+    XS_Out_File_df['Lat1'] = lat_base - XS_Out_File_df['r1'] * cellsize_y
+    XS_Out_File_df['Lon1'] = lon_base + XS_Out_File_df['c1'] * cellsize_x
+    XS_Out_File_df['Lat2'] = lat_base - XS_Out_File_df['r2'] * cellsize_y
+    XS_Out_File_df['Lon2'] = lon_base + XS_Out_File_df['c2'] * cellsize_x
+
+
+    curve_data_df['Lat'] = lat_base - curve_data_df['Row'] * cellsize_y
+    curve_data_df['Lon'] = lon_base + curve_data_df['Col'] * cellsize_x
+    vdt_df['Lat'] = lat_base - vdt_df['Row'] * cellsize_y
+    vdt_df['Lon'] = lon_base + vdt_df['Col'] * cellsize_x
+
+    # filter the XS_Out_File_df to only inlcude cross-sections with 'row' and 'col' combinations that match the curve_data_gdf
+    # keep only rows whose (Row,Col) is in curve_data_gdf
+    XS_Out_File_df = (
+                        XS_Out_File_df
+                        .merge(
+                            curve_data_gdf[['COMID','Row','Col']].drop_duplicates(),
+                            on=['COMID','Row','Col'],
+                            how='inner'
+                        )
+                    )
+
+    # use lat lon pairs to create a line vector shapefile
+    xs_lines = []
+    for index, row in XS_Out_File_df.iterrows():
+        start_point = Point(row['Lon1'], row['Lat1'])
+        end_point = Point(row['Lon2'], row['Lat2'])
+        xs_lines.append(LineString([start_point, end_point]))
+    # Create a GeoDataFrame from the lines, set the CRS to the same as the dem
+    XS_Out_File_df['geometry'] = xs_lines
+    # Build the CRS object as you already do
+    crs = CRS.from_wkt(Rast_Projection)
+    # Create the GeoDataFrame using all columns from XS_Out_File_df, including geometry
+    xs_gdf = gpd.GeoDataFrame(XS_Out_File_df, geometry='geometry', crs=crs)
+    # # convert the crs of the xs_gdf to match the vdt_gdf and curve_data_gdf
+    xs_gdf = xs_gdf.to_crs(projected_crs)
+
+    return downstream_gdf, vdt_gdf, curve_data_gdf, xs_gdf
 
 
 def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_Folder, FLOW_Folder, 
                      VDT_Folder, ARC_Folder, BathyFileFolder, XS_Folder, ManningN, bathy_use_banks,
                      find_banks_based_on_landcover, create_reach_average_curve_file,
                      dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
-                     StrmShp_gdf=None):
+                     upstream_elevation_change_threshold=1.0, StrmShp_gdf=None):
 
     if DEM.endswith(".tif") or DEM.endswith(".img"):
         DEM_Name = DEM
@@ -894,11 +972,29 @@ def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_
         ARC_BathyFile = os.path.join(BathyFileFolder, str(dam_id) + '_ARC_Bathy.tif')
 
         XS_Out_File = os.path.join(XS_Folder, str(dam_id) + '_XS_Out.txt')
+        Local_XS_File = os.path.join(XS_Folder, str(dam_id) + '_Local_XS_Lines.shp')
+
+        # Get the details of the DEM file
+        (lon_1, lat_1, lon_2, lat_2, dx, dy, ncols, nrows, geoTransform, Rast_Projection) = Get_Raster_Details(DEM_File)
+
+        # set up a WGS84 ellipsoid
+        geod = Geod(ellps='WGS84')
+
+        # horizontal distance: from (lon1,lat1) to (lon1+dx, lat1)
+        _, _, res_x_m = geod.inv(lon_1, lat_1, lon_1 + dx, lat_1)
+
+        # vertical distance: from (lon1,lat1) to (lon1, lat1+dy)
+        _, _, res_y_m = geod.inv(lon_1, lat_1, lon_1, lat_1 + dy)
+
+        print(f"Dam Assessment: Exact pixel size of DEM: {res_x_m:.3f} m × {res_y_m:.3f} m")
+
+        # Calculate the average distance increment for upstream processing
+        distance_upstream_increment = (res_x_m + res_y_m)/2 
         
         #Download and Process Land Cover Data
         LandCoverFile = ''
         if not os.path.exists(LAND_File):
-            (lon_1, lat_1, lon_2, lat_2, dx, dy, ncols, nrows, geoTransform, Rast_Projection) = Get_Raster_Details(DEM_File)
+            
             
             # Get geometry in original projection
             geom = ESA.Get_Polygon_Geometry(lon_1, lat_1, lon_2, lat_2)
@@ -941,13 +1037,15 @@ def Dam_Assessment(DEM_Folder, DEM, watershed, ESA_LC_Folder, STRM_Folder, LAND_
             arc.run() # Runs ARC
         
         # Now we need to use the Dam_StrmShp and VDT data to find the stream cells at distance increments below the dam
-        downstream_gdf, vdt_gdf, curve_data_gdf = find_stream_cells_at_increments_above_and_below_dam(Curve_File, VDT_File, dam_csv, dam_id_field, dam_id,
+        downstream_gdf, vdt_gdf, curve_data_gdf, xs_gdf = find_stream_cells_at_increments_above_and_below_dam(Curve_File, VDT_File, XS_Out_File, dam_csv, dam_id_field, dam_id,
                                                                                                       Dam_StrmShp, Dam_Reanalsyis_FlowFile,
-                                                                                                      STRM_File_Clean, known_baseflow)
+                                                                                                      DEM_File, upstream_elevation_change_threshold, 
+                                                                                                      distance_upstream_increment, known_baseflow, Rast_Projection)
         
         # output the results to shapefiles
         vdt_gdf.to_file(Local_VDT_File)
         curve_data_gdf.to_file(Local_Curve_File)
+        xs_gdf.to_file(Local_XS_File)
 
 
     return
@@ -971,6 +1069,9 @@ def process_dam(dam_dict):
 
     # if we have a known channel forming discharge, we will add it to the streamflow file and use it to estimate bathymetry
     known_channel_forming_discharge = dam_dict['known_channel_forming_discharge']
+
+    # the elevation change threshold to use when identifying upstream cross-section
+    upstream_elevation_change_threshold = dam_dict['upstream_elevation_change_threshold']
 
 
     #Folder Management
@@ -1061,7 +1162,7 @@ def process_dam(dam_dict):
                      VDT_Folder, ARC_Folder, BathyFileFolder, XS_Folder, ManningN, bathy_use_banks,
                      find_banks_based_on_landcover, create_reach_average_curve_file,
                      dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
-                     StrmShp_gdf)
+                     upstream_elevation_change_threshold, StrmShp_gdf)
         
 
     # delete the ESA_LC_Folder and the data in it
@@ -1121,6 +1222,7 @@ def process_json_input(json_file):
             "create_reach_average_curve_file": dam.get("create_reach_average_curve_file", False),
             "known_baseflow": dam.get("known_baseflow", None),
             "known_channel_forming_discharge": dam.get("known_channel_forming_discharge", None),
+            "upstream_elevation_change_threshold": dam.get("upstream_elevation_change_threshold", 1.0)
         }
 
         # Ensure the output directory exists
@@ -1187,6 +1289,7 @@ def main():
     cli_parser.add_argument("--create_reach_average_curve_file", action="store_true", help="Create a reach average curve file instead of one that varies for each stream cell")
     cli_parser.add_argument("--known_baseflow", type=float, default=None, help="Known baseflow value")
     cli_parser.add_argument("--known_channel_forming_discharge", type=float, default=None, help="Known channel forming discharge value")
+    cli_parser.add_argument("--upstream_elevation_change_threshold", type=float, help="The upstream elevation change used to identify the appropriate upstream cross-section, default is 0.5 meters", default=1.0)
 
     args = parser.parse_args()
 

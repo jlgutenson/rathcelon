@@ -67,6 +67,10 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     # Find the upstream segment (if needed)
     print('Process_and_Write_Retrospective_Data_for_Dam: Find the upstream segment (if needed)')
     upstream_StrmShp_gdf = StrmShp_gdf[StrmShp_gdf['DSLINKNO'] == current_rivid]
+    # Select the upstream segement with the highest Stream Order, if needed
+    upstream_StrmShp_gdf = upstream_StrmShp_gdf.loc[upstream_StrmShp_gdf['strmOrder'].idxmax()]
+    upstream_StrmShp_gdf = gpd.GeoDataFrame([upstream_StrmShp_gdf], crs=StrmShp_filtered_gdf.crs)
+
 
     # Initialize a list to store the downstream segments.
     downstream_segments = []

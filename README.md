@@ -14,6 +14,7 @@ conda create -n rathcelon_py310 python=3.10
 conda activate rathcelon_py310
 pip install --upgrade pip
 pip install pyarrow geopandas pandas netCDF4 dask fiona s3fs xarray zarr beautifulsoup4 dataretrieval geojson progress tqdm pygeos pillow==9.0.1 rasterio
+pip install memory_profiler
 conda install -c conda-forge gdal
 ```
 
@@ -60,7 +61,8 @@ The first is by creating an input JSON file like the one below. Note that if you
             "find_banks_based_on_landcover": true,
             "create_reach_average_curve_file": false,
             "known_baseflow": 5.0,
-            "known_channel_forming_discharge": 10.0
+            "known_channel_forming_discharge": 10.0,
+            "upstream_elevation_change_threshold": 0.5
         }
     ]
 }
@@ -81,6 +83,7 @@ These inputs are:
     "create_reach_average_curve_file": (true/false) If true, RathCelon with direct ARC to generate a curve file that is the same for all stream cells on a stream reach. If false, RathCelon will direct ARC to generate a curve file that has a local curve for each stream cell. 
     "known_baseflow": (float) Optional input expressed as a value in cubic meters per second. This is used in conjunction with "bathy_use_banks" = False. This will be substituted into the ARC's processing to estimate a bathymetry in each cross section. This value will also be used to calculate the top width used for distance calculations. 
     "known_channel_forming_discharge": (float) Optional input expressed as a value in cubic meters per second. This is used in conjunction with "bathy_use_banks" = True. This will be substituted into the ARC's processing to estimate a bathymetry in each cross section. 
+    "upstream_elevation_change_threshold": (float) Required. The changed in upstream elevation used to identify the cross section upstream of the dam. The default is 1.0.
 
 To run with the JSON, issue the following command in you command line window:
 
@@ -94,7 +97,7 @@ You can also run RathCelon from the command line without the JSON.
 This can be done by issueing the following command:
 
 ```bash
-rathcelon cli name dam_csv dam_id_field dam_id flowline dem_dir output_dir --bathy_use_banks --process_stream_network --find_banks_based_on_landcover --create_reach_average_curve_file --known_baseflow 5.0 --known_channel_forming_discharge 10.0
+rathcelon cli name dam_csv dam_id_field dam_id flowline dem_dir output_dir --bathy_use_banks --process_stream_network --find_banks_based_on_landcover --create_reach_average_curve_file --known_baseflow 5.0 --known_channel_forming_discharge 10.0 --upstream_elevation_change_threshold 0.1
 ```
 
 Issuing the commands `--bathy_use_banks`, `--process_stream_network`, `--find_banks_based_on_landcover`, and `--create_reach_average_curve_file` indicates that those options are set to True. 
@@ -104,13 +107,15 @@ In the output_dir you specify in your inputs, you will find a folder that is the
 
 The "VDT" folder contains the shapefiles {name}_Local_VDT_Database.shp and {name}_Local_CurveFile.shp. 
 
-These will be the 3 nearest VDT database and curvefile stream cells that are 1, 2, and 3x the top width distance of the stream downstream of the dam location and 1 stream cell that is 1/4x the top width distance upstream of the dam location. 
+These will be the 4 nearest VDT database and curvefile stream cells that are 1, 2, 3, and 4x the top width distance of the stream downstream of the dam location and 1 stream cell that is located at the stream cell where the upstream elevation change is greater than or equal to your `upstream_elevation_change_threshold` value.
 
 If you set "known_baseflow" in your inputs, this will be used by ARC to estimate bathymetry (if "bathy_use_banks" = False) and RathCelon to estimate the top width used in the distance calculations. Otherwise, top width was estimated using the 2yr discharge in the "output_dir/FLOW/{name}_Reanalysis.csv" file.
 
 In either case, RathCelon finds the median top width for the stream reach on which the dam is located and uses this value to calculate the distance. 
 
 If the original 1x top-width distance is <100 meters, RathCelon will default to using 100 meters for the top width distance. 
+
+The "XS" folder contains the cross-section information for all stream cells. The shapefiles {name}_Local_XS_Lines.shp will contain the cross-section locations and information for the stream cells in the {name}_Local_CurveFile.shp. 
 
 For a breakdown of the attributes in the curve file, see [this wiki](https://github.com/MikeFHS/automated-rating-curve/wiki/Running-ARC-and-Looking-at-ARC-Outputs). 
 
