@@ -118,7 +118,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_c
     # Load FDC data from S3 using Dask
     # Convert to a list of integers
     print('Process_and_Write_Retrospective_Data_for_Dam: Load FDC data from S3 using Dask')
-    fdc_s3_uri = 's3://geoglows-v2-retrospective/fdc.zarr'
+    fdc_s3_uri = 's3://geoglows-v2/retrospective/fdc.zarr'
     fdc_s3store = s3fs.S3Map(root=fdc_s3_uri, s3=s3, check=False)
     p_exceedance = [float(50.0), float(0.0)]
     fdc_ds = xr.open_zarr(fdc_s3store).sel(p_exceed=p_exceedance, river_id=rivids_str)
