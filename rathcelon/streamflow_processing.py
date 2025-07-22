@@ -10,6 +10,28 @@ import s3fs
 import xarray as xr
 import requests
 import io
+import time
+
+
+def get_nwm_rp(comids: list[int]):
+    rp_url = 'https://nwm-api.ciroh.org/return-period'
+
+    header = {'x-api-key': 'AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II'}
+    params = {'comids': ','.join(map(str, comids)),
+              'output_format': 'csv',
+              'order_by_comid': False,}
+
+    response = requests.get(rp_url, params=params, headers=header)
+
+    if response.status_code == 200:
+        return_period_df = pd.read_csv(io.StringIO(response.text))
+    else:
+        raise requests.exceptions.HTTPError(response.text)
+    return_period_df = return_period_df.set_index("feature_id")
+    return_period_df.index.name = "river_id"
+    return_period_df.columns = ['rp2', 'rp5', 'rp10', 'rp25', 'rp50', 'rp100']
+
+    return return_period_df
 
 
 def get_stream_coords(strmShp_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: list[int|str], method='centroid')\
@@ -86,7 +108,8 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
 
     # Filter the dam data to the dam of interest
     print('Process_and_Write_Retrospective_Data_for_Dam: Filter the dam data to the dam of interest')
-    print(dam_gdf.head())
+    print(dam_gdf.tail())
+    print(f'dam_id = {dam_id}')
     dam_gdf = dam_gdf[dam_gdf[dam_id_field] == dam_id]
 
     # Ensure there is at least one row remaining
@@ -108,9 +131,9 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
     StrmShp_gdf = StrmShp_gdf[StrmShp_gdf.geometry.notnull()]
     StrmShp_gdf = StrmShp_gdf[~StrmShp_gdf.geometry.is_empty]
 
-    print("StrmShp_gdf length:", len(StrmShp_gdf))
-    print("Valid geometries:", StrmShp_gdf.geometry.notnull().sum())
-    print("Non-empty geometries:", (~StrmShp_gdf.geometry.is_empty).sum())
+    # print("StrmShp_gdf length:", len(StrmShp_gdf))
+    # print("Valid geometries:", StrmShp_gdf.geometry.notnull().sum())
+    # print("Non-empty geometries:", (~StrmShp_gdf.geometry.is_empty).sum())
 
     if not StrmShp_gdf.empty:
         utm_crs = StrmShp_gdf.estimate_utm_crs()
@@ -148,7 +171,8 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
         stream_order_field = 'streamorde'
 
     # Use the 'LINKNO' and 'DSLINKNO' fields to find the stream upstream and downstream of the dam
-    print('Process_and_Write_Retrospective_Data_for_Dam: Use the LINKNO and DSLINKNO fields to find the stream upstream and downstream of the dam')
+    print('Process_and_Write_Retrospective_Data_for_Dam: Use the LINKNO and DSLINKNO (hydroseq and dnhydroseq) '
+          'fields to find the stream upstream and downstream of the dam')
     current_rivid = StrmShp_filtered_gdf[rivid_field].values[0]
     downstream_rivid = StrmShp_filtered_gdf[ds_rivid_field].values[0]
 
@@ -173,9 +197,9 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
     # Start with the dam's downstream segment.
     current_downstream_rivid = downstream_rivid
 
-    # Loop to find up to 10 downstream segments.
-    print('Process_and_Write_Retrospective_Data_for_Dam: Loop to find up to 10 downstream segments.')
-    for i in range(11):
+    # Loop to find up to 2 downstream segments. lol
+    print('Process_and_Write_Retrospective_Data_for_Dam: Loop to find up to 2 downstream segments.')
+    for i in range(2):
         # Find the stream segment whose LINKNO matches the current downstream rivid.
         segment = StrmShp_gdf[StrmShp_gdf[rivid_field] == current_downstream_rivid]
         
@@ -294,36 +318,77 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
 
     else:
         strm_coords = get_stream_coords(StrmShp_gdf, rivid_field, rivids_int)
-
+        print(f'strm_coords: {strm_coords}')
         # use the nwm api to get reach_id based on lat lon...
-        hydroseq_reach_id = {}
+        hydroseqs = []
         reach_ids = []
-        for key, value in strm_coords:
-            lat = value[0]
-            lon = value[1]
-            r = requests.get(f"https://nwm-api.ciroh.org/geometry?lat={lat}&lon={lon}&output_format=csv"
-                             f"&key=AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II")
-            # Check for successful response (HTTP status code 200)
-            if r.status_code == 200:
-                # Convert API response to pandas DataFrame
-                df = pd.read_csv(io.StringIO(r.text))
-                # Extract first (and only) reach ID from the response
-                print(df['station_id'].values)
-                reach_id = df['station_id'].values[0]
-                hydroseq_reach_id[key] = reach_id
-                reach_ids.append(reach_id)
-            else:
-                # Raise error if API request fails
-                raise requests.exceptions.HTTPError(r.text)
+
+        for key, value in strm_coords.items():
+            lat, lon = value
+            url = f"https://nwm-api.ciroh.org/geometry?lat={lat}&lon={lon}&output_format=csv&key=AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II"
+
+            retries = 3
+            for attempt in range(retries):
+                try:
+                    r = requests.get(url, timeout=30)  # 30s max wait per request
+                    r.raise_for_status()
+
+                    df = pd.read_csv(io.StringIO(r.text))
+                    reach_id = df['station_id'].values[0]
+
+                    hydroseqs.append(key)
+                    reach_ids.append(reach_id)
+                    break  # success, exit retry loop
+
+                except (requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
+                    print(f"Request failed for key={key} lat={lat} lon={lon}, attempt {attempt + 1}/{retries}")
+                    print(f"Error: {e}")
+
+                    if attempt < retries - 1:
+                        wait = 2 ** attempt
+                        print(f"Retrying in {wait} seconds...")
+                        time.sleep(wait)
+                    else:
+                        print("Giving up on this point.\n")
+                        continue  # skip this point after final failure
+
         # now hydroseq_reach_id has each hydroseq matched with its reach_id
+
+        # we don't really need the median or max flow... so this may be useful later, but i'll comment it out for now
+        # if known_baseflow is None:
         s3_path = 's3://noaa-nwm-retrospective-3-0-pds/CONUS/zarr/chrtout.zarr'
-        nwm_ds = xr.open_zarr(s3_path, storage_options={"anon": True}, consolidated=True)
+        fs = s3fs.S3FileSystem(anon=True)
+        nwm_ds = xr.open_zarr(fs.get_mapper(s3_path), consolidated=True)
         reach_ds = nwm_ds['streamflow'].sel(feature_id=reach_ids)
         df = reach_ds.to_dataframe().reset_index()
+        df = df.groupby("feature_id").agg(
+            qout_median=("streamflow", "median"),
+            qout_max=("streamflow", "max"),
+        ).round(3)
+        df.index.name = 'river_id'
 
+        # else:
+        #     df = pd.DataFrame({'river_id': reach_ids,
+        #                        'qout_median': 1,
+        #                        'qout_max': 100,}).set_index('river_id')
 
+        # Get return period DataFrame
+        rp_df = get_nwm_rp(reach_ids)
 
-        final_df = df
+        # Merge it with df on index (river_id)
+        final_df = pd.concat([df, rp_df], axis=1)
+
+        # Create a DataFrame to map hydroseq to river_id and join it in
+        map_df = pd.DataFrame({'hydroseq': hydroseqs, 'river_id': reach_ids})
+
+        # Merge map_df with final_df on river_id, set hydroseq as index, and drop river_id
+        final_df = map_df.merge(final_df, on='river_id') \
+            .set_index('hydroseq') \
+            .drop(columns='river_id')
+
+        # Rename the index to river_id
+        final_df.index.name = 'river_id'
+        print(final_df)
 
     final_df['COMID'] = final_df.index
 
@@ -348,7 +413,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
     if known_channel_forming_discharge is not None:
         final_df['known_channel_forming_discharge'] = known_channel_forming_discharge
 
-    print(final_df)
+    # print(final_df)
 
     # Write the final Dask DataFrame to CSV
     print('Process_and_Write_Retrospective_Data_for_Dam: Write the final Dask DataFrame to CSV')

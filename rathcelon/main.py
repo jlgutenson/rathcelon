@@ -46,7 +46,7 @@ from pyproj import CRS, Geod, Transformer   # CRS and transformations
 from shapely.geometry import Point, LineString #, MultiLineString, shape, mapping
 from shapely.ops import nearest_points, linemerge, transform #, split
 # import shutil
-# from rasterio.features import rasterize
+from rasterio.features import rasterize
 # from rasterio.warp import calculate_default_transform, reproject, Resampling
 
 # local imports
@@ -54,9 +54,8 @@ from . import streamflow_processing
 from . import esa_download_processing as esa
 
 
-def Process_Geospatial_Data(ARC_Folder: str, ARC_FileName_Bathy: str,  DEM_File: str, LandCoverFile: str,
-                            STRM_File: str, STRM_File_Clean: str, LAND_File: str, BathyFileFolder: str,
-                            FLOW_Folder: str, XS_Folder: str, ManningN: str, VDT_File: str, Curve_File: str,
+def Process_Geospatial_Data(ARC_FileName_Bathy: str,  DEM_File: str, LandCoverFile: str,
+                            STRM_File: str, STRM_File_Clean: str, LAND_File: str, ManningN: str, VDT_File: str, Curve_File: str,
                             ARC_BathyFile: str, Dam_StrmShp: str, Dam_Reanalsyis_FlowFile: str, XS_File_Out: str,
                             bathy_use_banks: bool, find_banks_based_on_landcover: bool,
                             create_reach_average_curve_file: bool, dam_csv: str, dam_id_field: str, dam_id: int|str,
@@ -66,16 +65,12 @@ def Process_Geospatial_Data(ARC_Folder: str, ARC_FileName_Bathy: str,  DEM_File:
 
     Parameters
     ----------
-    ARC_Folder
     ARC_FileName_Bathy
     DEM_File
     LandCoverFile
     STRM_File
     STRM_File_Clean
     LAND_File
-    BathyFileFolder
-    FLOW_Folder
-    XS_Folder
     ManningN: .txt file path w/ Manning's n based on LU
     VDT_File
     Curve_File
@@ -101,8 +96,9 @@ def Process_Geospatial_Data(ARC_Folder: str, ARC_FileName_Bathy: str,  DEM_File:
     #Get the Spatial Information from the DEM Raster
     (minx, miny, maxx, maxy, dx, dy, ncols, nrows, dem_geoTransform, dem_projection) = Get_Raster_Details(DEM_File)
     projWin_extents = [minx, maxy, maxx, miny]
-    outputBounds = [minx, miny, maxx, maxy]  #https://gdal.org/api/python/osgeo.gdal.html
-   
+    # outputBounds = [minx, miny, maxx, maxy]  #https://gdal.org/api/python/osgeo.gdal.html
+    rivid_field = None
+
     #Create Land Dataset
     if os.path.isfile(LAND_File):
         print(f'{LAND_File} Already Exists')
@@ -110,17 +106,29 @@ def Process_Geospatial_Data(ARC_Folder: str, ARC_FileName_Bathy: str,  DEM_File:
         print(f'Creating {LAND_File}')
         # Let's make sure all the GIS data is using the same coordinate system as the DEM
         LandCoverFile = Check_and_Change_Coordinate_Systems(DEM_File, LandCoverFile)
-        Create_AR_LandRaster(LandCoverFile, LAND_File, projWin_extents, dem_projection, ncols, nrows)
+        Create_AR_LandRaster(LandCoverFile, LAND_File, projWin_extents, ncols, nrows)
 
     # now we need to figure out if our Dam_StrmShp and DEM_Reanalysis_Flowfile exists and if not, create it
     if os.path.isfile(Dam_StrmShp) and os.path.isfile(Dam_Reanalsyis_FlowFile):
         print(f'{Dam_StrmShp} Already Exists\n'
               f'{Dam_Reanalsyis_FlowFile} Already Exists')
         Dam_StrmShp_gdf = gpd.read_file(Dam_StrmShp)
-        rivids = Dam_StrmShp_gdf['LINKNO'].values
+
+        if 'LINKNO' in Dam_StrmShp_gdf.columns:
+            rivid_field = 'LINKNO'
+        else:
+            rivid_field = 'hydroseq'
+
+        rivids = Dam_StrmShp_gdf[rivid_field].values
+        print(rivids)
+
     elif StrmShp_gdf is not None and os.path.isfile(Dam_StrmShp) is False and os.path.isfile(Dam_Reanalsyis_FlowFile) is False:
+        if 'LINKNO' in StrmShp_gdf.columns:
+            rivid_field = 'LINKNO'
+        else:
+            rivid_field = 'hydroseq'
         print('Running Function: Process_and_Write_Retrospective_Data_for_Dam')
-        (DEM_Reanalsyis_FlowFile, Dam_StrmShp, rivids, Dam_StrmShp_gdf) = streamflow_processing.Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, 'LINKNO', dam_csv,
+        (DEM_Reanalsyis_FlowFile, Dam_StrmShp, rivids, Dam_StrmShp_gdf) = streamflow_processing.Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf, rivid_field, dam_csv,
                                                                                                                                  dam_id_field, dam_id, known_baseflow,
                                                                                                                                  known_channel_forming_discharge,
                                                                                                                                  Dam_Reanalsyis_FlowFile,
@@ -132,7 +140,8 @@ def Process_Geospatial_Data(ARC_Folder: str, ARC_FileName_Bathy: str,  DEM_File:
     else:
         print(f'Creating {STRM_File}\n'
               f'\tby rasterizing {Dam_StrmShp}')
-        Create_AR_StrmRaster(Dam_StrmShp, STRM_File, outputBounds, minx, miny, maxx, maxy, dx, dy, ncols, nrows, 'LINKNO')
+        print(f'rivid_field: {rivid_field}')
+        Create_AR_StrmRaster(Dam_StrmShp, STRM_File, DEM_File, rivid_field)
     
     #Clean Stream Raster
     if os.path.isfile(STRM_File_Clean):
@@ -140,17 +149,18 @@ def Process_Geospatial_Data(ARC_Folder: str, ARC_FileName_Bathy: str,  DEM_File:
     else:
         print(f'Creating {STRM_File_Clean}')
         Clean_STRM_Raster(STRM_File, STRM_File_Clean)
-    
-    
+
     #Get the unique values for all the stream ids
     (S, ncols, nrows, cellsize, yll, yur, xll, xur, lat, dem_geotransform, dem_projection) = Read_Raster_GDAL(STRM_File_Clean)
     (RR,CC) = S.nonzero()
     num_strm_cells = len(RR)
+    print(f'num_strm_cells: {num_strm_cells}')
     COMID_Unique = np.unique(S)
     # COMID_Unique = np.delete(COMID_Unique, 0)  #We don't need the first entry of zero
     COMID_Unique = COMID_Unique[np.where(COMID_Unique > 0)]
     COMID_Unique = np.sort(COMID_Unique).astype(int)
     num_comids = len(COMID_Unique)
+    print(f'num_comids: {num_comids}')
 
 
     #Create the Bathy Input File
@@ -337,18 +347,51 @@ def Create_BaseLine_Manning_n_File_ESA(ManningN: str):
         out_file.write('100\tMossLichen\t0.100')
 
 
-def Create_AR_LandRaster(LandCoverFile, LAND_File, projWin_extents, out_projection, ncols, nrows):
+def Create_AR_LandRaster(LandCoverFile: str, LAND_File: str, projWin_extents, ncols, nrows):
     ds = gdal.Open(LandCoverFile)
     ds = gdal.Translate(LAND_File, ds, projWin = projWin_extents, width=ncols, height = nrows)
     del ds
 
 
-def Create_AR_StrmRaster(StrmSHP: str, STRM_File: str, outputBounds, minx, miny, maxx, maxy, dx, dy, ncols, nrows, Param):
-    print(StrmSHP)
-    source_ds = gdal.OpenEx(StrmSHP)
+# def Create_AR_StrmRaster(StrmSHP: str, STRM_File: str, outputBounds, ncols, nrows, Param):
+#     print(StrmSHP)
+#     source_ds = gdal.OpenEx(StrmSHP)
+#
+#     gdal.Rasterize(STRM_File, source_ds, format='GTiff', outputType=gdal.GDT_Int32, outputBounds = outputBounds, width = ncols, height = nrows, noData = -9999, attribute = Param)
+#     del source_ds
 
-    gdal.Rasterize(STRM_File, source_ds, format='GTiff', outputType=gdal.GDT_Int32, outputBounds = outputBounds, width = ncols, height = nrows, noData = -9999, attribute = Param)
-    del source_ds
+
+
+def Create_AR_StrmRaster(StrmSHP: str, output_raster_path: str, DEM_File: str, value_field: str):
+    # Load the shapefile
+    gdf = gpd.read_file(StrmSHP)
+
+    # Load the reference raster to get transform, shape, and CRS
+    with rasterio.open(DEM_File) as ref:
+        meta = ref.meta.copy()
+        ref_transform = ref.transform
+        out_shape = (ref.height, ref.width)
+        crs = ref.crs
+
+    # Reproject the shapefile to match reference CRS
+    if gdf.crs != crs:
+        gdf = gdf.to_crs(crs)
+
+    # Prepare shapes (geometry, value)
+    shapes = [(geom, value if value is not None else 0)
+              for geom, value in zip(gdf.geometry, gdf[value_field])]
+
+    # Rasterize
+    raster = rasterize(shapes=shapes, out_shape=out_shape, fill=0, transform=ref_transform, dtype='int64')
+
+    # Update metadata
+    meta.update({"driver": "GTiff", "dtype": "int64", "count": 1, "compress": "lzw"})
+
+    # Write to file
+    with rasterio.open(output_raster_path, 'w', **meta) as dst:
+        dst.write(raster, 1)
+
+    print(f"Raster written to {output_raster_path}")
 
 
 def Write_Output_Raster(s_output_filename: str, raster_data, ncols: int, nrows: int, dem_geotransform, dem_projection, s_file_format, s_output_type):
@@ -462,32 +505,32 @@ def Clean_STRM_Raster(STRM_File: str, STRM_File_Clean: str) -> None:
         p_percent = (num_nonzero + 1) / 100.0
         n = 0
         for x in range(num_nonzero):
-            if x>=p_count*p_percent:
+            if x >= p_count * p_percent:
                 p_count = p_count + 1
                 print(f' {p_count}', end =" ")
-            r=RR[x]
-            c=CC[x]
-            V = B[r,c]
-            if V>0:
+            r = RR[x]
+            c = CC[x]
+            V = B[r, c]
+            if V > 0:
                 #Left and Right cells are zeros
-                if B[r,c+1]==0 and B[r,c-1]==0:
+                if B[r, c + 1] == 0 and B[r, c - 1] == 0:
                     #The bottom cells are all zeros as well, but there is a cell directly above that is legit
-                    if (B[r+1,c-1]+B[r+1,c]+B[r+1,c+1])==0 and B[r-1,c]>0:
-                        B[r,c] = 0
-                        n=n+1
+                    if (B[r + 1, c - 1] + B[r + 1, c] + B[r + 1, c + 1]) == 0 and B[r - 1, c] > 0:
+                        B[r, c] = 0
+                        n += 1
                     #The top cells are all zeros as well, but there is a cell directly below that is legit
-                    elif (B[r-1,c-1]+B[r-1,c]+B[r-1,c+1])==0 and B[r+1,c]>0:
-                        B[r,c] = 0
-                        n=n+1
+                    elif (B[r - 1, c - 1] + B[r - 1, c] + B[r - 1, c + 1]) == 0 and B[r + 1, c] > 0:
+                        B[r, c] = 0
+                        n += 1
                 #top and bottom cells are zeros
-                if B[r,c]>0 and B[r+1,c]==0 and B[r-1,c]==0:
+                if B[r, c] > 0 and B[r + 1, c] == 0 and B[r - 1, c] == 0:
                     #All cells on the right are zero, but there is a cell to the left that is legit
-                    if (B[r+1,c+1]+B[r,c+1]+B[r-1,c+1])==0 and B[r,c-1]>0:
-                        B[r,c] = 0
-                        n=n+1
-                    elif (B[r+1,c-1]+B[r,c-1]+B[r-1,c-1])==0 and B[r,c+1]>0:
-                        B[r,c] = 0
-                        n=n+1
+                    if (B[r + 1, c + 1] + B[r, c + 1] + B[r - 1, c + 1]) == 0 and B[r, c- 1] > 0:
+                        B[r, c] = 0
+                        n += 1
+                    elif (B[r + 1, c - 1] + B[r, c - 1] + B[r - 1, c - 1]) == 0 and B[r, c + 1] > 0:
+                        B[r, c] = 0
+                        n += 1
         print(f'\nFirst pass removed {n} cells')
         
         
@@ -523,7 +566,7 @@ def Clean_STRM_Raster(STRM_File: str, STRM_File_Clean: str) -> None:
         print(f'\nSecond pass removed {n} redundant cells')
     
     print(f'Writing Output File {STRM_File_Clean}')
-    Write_Output_Raster(STRM_File_Clean, B[1:nrows+1,1:ncols+1], ncols, nrows, dem_geotransform, dem_projection, "GTiff", gdal.GDT_Int32)
+    Write_Output_Raster(STRM_File_Clean, B[1:nrows+1,1:ncols+1], ncols, nrows, dem_geotransform, dem_projection, "GTiff", gdal.GDT_Int64)
     #return B[1:nrows+1,1:ncols+1], ncols, nrows, cellsize, yll, yur, xll, xur
 
 
@@ -730,10 +773,19 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File: str, VD
 
     # **1. Build a Directed Graph Using LINKNO and DSLINKNO**
     G = nx.DiGraph()
+
+    if 'LINKNO' in Dam_StrmShp_gdf.columns:
+        rivid_field = 'LINKNO'
+        ds_rivid_field = 'DSLINKNO'
+    else:
+        rivid_field = 'hydroseq'
+        ds_rivid_field = 'dnhydroseq'
+
+
     
     for _, row in Dam_StrmShp_gdf.iterrows():
-        link_id = row['LINKNO']
-        ds_link_id = row['DSLINKNO']
+        link_id = row[rivid_field]
+        ds_link_id = row[ds_rivid_field]
         geometry = row.geometry
 
         if ds_link_id > 0:  # Ignore terminal reaches
@@ -742,23 +794,26 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File: str, VD
     # Find the Closest Stream to the Dam**
     Dam_StrmShp_gdf['distance'] = Dam_StrmShp_gdf.distance(dam_point)
     closest_stream = Dam_StrmShp_gdf.loc[Dam_StrmShp_gdf['distance'].idxmin()]
-    start_link = closest_stream['LINKNO']
+    start_link = closest_stream[rivid_field]
 
+    """
+        none of the following variables were used later, so i just commented them out... i'll see if it still runs...
+    """
     # Filter the top-width data to the closest stream and find the median
-    merged_df = merged_df[merged_df['COMID']==start_link]
-    if known_baseflow is None:
-        tw_median = merged_df.groupby('COMID')['tw_rp2'].median()
-    else:
-        tw_median = merged_df.groupby('COMID')['tw_known_baseflow'].median()
+    # merged_df = merged_df[merged_df['COMID']==start_link]
+    # if known_baseflow is None:
+    #     tw_median = merged_df.groupby('COMID')['tw_rp2'].median()
+    # else:
+    #     tw_median = merged_df.groupby('COMID')['tw_known_baseflow'].median()
     
 
     # Calculate the Top Width (tw) for the Closest Stream and find the locations of interest on the stream network**
     # Select tw_median based on closest stream 'COMID'
-    tw = tw_median.get(start_link, 100)  # Default to 50m if not found
+    # tw = tw_median.get(start_link, 100)  # Default to 50m if not found
 
     # use a minimum of 100 meters for the top width
-    if tw < 100:
-        tw = 100
+    # if tw < 100:
+    #     tw = 100
 
 
     # Get the dam’s intersection point on the stream
@@ -913,7 +968,7 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File: str, VD
     points_of_interest.append(upstream_point)
 
     # **Save the Downstream Points as a Shapefile**
-    downstream_gdf = gpd.GeoDataFrame(data={'dam_id': dam_ids, 'LINKNO': link_nos, 'geometry': points_of_interest},
+    downstream_gdf = gpd.GeoDataFrame(data={'dam_id': dam_ids, rivid_field: link_nos, 'geometry': points_of_interest},
                                       crs=projected_crs)
 
 
@@ -953,7 +1008,6 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File: str, VD
     XS_Out_File_df['Lat2'] = lat_base - XS_Out_File_df['r2'] * cellsize_y
     XS_Out_File_df['Lon2'] = lon_base + XS_Out_File_df['c2'] * cellsize_x
 
-
     curve_data_df['Lat'] = lat_base - curve_data_df['Row'] * cellsize_y
     curve_data_df['Lon'] = lon_base + curve_data_df['Col'] * cellsize_x
     vdt_df['Lat'] = lat_base - vdt_df['Row'] * cellsize_y
@@ -961,14 +1015,8 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File: str, VD
 
     # filter the XS_Out_File_df to only include cross-sections with 'row' and 'col' combinations that match the curve_data_gdf
     # keep only rows whose (Row,Col) is in curve_data_gdf
-    XS_Out_File_df = (
-                        XS_Out_File_df
-                        .merge(
-                            curve_data_gdf[['COMID','Row','Col']].drop_duplicates(),
-                            on=['COMID','Row','Col'],
-                            how='inner'
-                        )
-                    )
+    XS_Out_File_df = (XS_Out_File_df.merge(curve_data_gdf[['COMID','Row','Col']].drop_duplicates(),
+                                           on=['COMID','Row','Col'], how='inner'))
 
     # use lat lon pairs to create a line vector shapefile
     xs_lines = []
@@ -976,6 +1024,7 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File: str, VD
         start_point = Point(row['Lon1'], row['Lat1'])
         end_point = Point(row['Lon2'], row['Lat2'])
         xs_lines.append(LineString([start_point, end_point]))
+
     # Create a GeoDataFrame from the lines, set the CRS to the same as the dem
     XS_Out_File_df['geometry'] = xs_lines
     # Build the CRS object as you already do
@@ -988,11 +1037,12 @@ def find_stream_cells_at_increments_above_and_below_dam(CurveParam_File: str, VD
     return downstream_gdf, vdt_gdf, curve_data_gdf, xs_gdf
 
 
-def Dam_Assessment(DEM_Folder: str, DEM: str, watershed: str, ESA_LC_Folder: str, STRM_Folder: str, LAND_Folder: str,
-                   FLOW_Folder: str, VDT_Folder: str, ARC_Folder: str, BathyFileFolder: str, XS_Folder: str, ManningN, bathy_use_banks,
-                     find_banks_based_on_landcover, create_reach_average_curve_file,
-                     dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
-                     upstream_elevation_change_threshold=1.0, StrmShp_gdf=None):
+def Dam_Assessment(DEM_Folder: str, DEM: str, ESA_LC_Folder: str, STRM_Folder: str, LAND_Folder: str,
+                   FLOW_Folder: str, VDT_Folder: str, ARC_Folder: str, BathyFileFolder: str, XS_Folder: str,
+                   ManningN: str, bathy_use_banks: bool, find_banks_based_on_landcover: bool,
+                   create_reach_average_curve_file: bool, dam_csv: str, dam_id_field: str, dam_id: int|str,
+                   known_baseflow: float, known_channel_forming_discharge: float,
+                   upstream_elevation_change_threshold=1.0, StrmShp_gdf: GeoDataFrame=None):
 
     if DEM.endswith((".tif", ".img")):
         DEM_Name = DEM
@@ -1005,7 +1055,6 @@ def Dam_Assessment(DEM_Folder: str, DEM: str, watershed: str, ESA_LC_Folder: str
         #Datasets to be Created
         Dam_StrmShp = os.path.join(STRM_Folder, f"{dam_id}_StrmShp.shp")
         Dam_Reanalsyis_FlowFile = os.path.join(FLOW_Folder,f"{dam_id}_Reanalysis.csv")
-
 
         STRM_File = os.path.join(STRM_Folder, f'{dam_id}_STRM_Raster.tif')
         STRM_File_Clean = STRM_File.replace('.tif','_Clean.tif')
@@ -1060,20 +1109,19 @@ def Dam_Assessment(DEM_Folder: str, DEM: str, watershed: str, ESA_LC_Folder: str
 
         # This function sets-up the Input files for ARC and FloodSpreader
         # It also does some of the geospatial processing
-        (ARC_FileName_Bathy, DEM_Reanalsyis_FlowFile, Dam_StrmShp) = Process_Geospatial_Data(ARC_Folder,  
-                                                                                            ARC_FileName_Bathy, 
-                                                                                            DEM_File, LandCoverFile, STRM_File, 
-                                                                                            STRM_File_Clean, LAND_File, 
-                                                                                            BathyFileFolder, FLOW_Folder, XS_Folder, ManningN,
-                                                                                            VDT_File, Curve_File, ARC_BathyFile, Dam_StrmShp, 
-                                                                                            Dam_Reanalsyis_FlowFile, XS_Out_File, bathy_use_banks,
-                                                                                            find_banks_based_on_landcover, create_reach_average_curve_file,
-                                                                                            dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,
-                                                                                            StrmShp_gdf)  
+        ARC_FileName_Bathy, DEM_Reanalsyis_FlowFile, Dam_StrmShp \
+            = Process_Geospatial_Data(ARC_FileName_Bathy, DEM_File, LandCoverFile, STRM_File, STRM_File_Clean,
+                                      LAND_File, ManningN, VDT_File, Curve_File, ARC_BathyFile, Dam_StrmShp,
+                                      Dam_Reanalsyis_FlowFile, XS_Out_File, bathy_use_banks,
+                                      find_banks_based_on_landcover, create_reach_average_curve_file, dam_csv,
+                                      dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge, StrmShp_gdf)
 
         # read in the reanalysis streamflow and break the code if the dataframe is empty or if the streamflow is all 0
         DEM_Reanalsyis_FlowFile_df = pd.read_csv(DEM_Reanalsyis_FlowFile)
-        if DEM_Reanalsyis_FlowFile_df.empty is True or DEM_Reanalsyis_FlowFile_df['qout_max'].mean() <= 0 or len(DEM_Reanalsyis_FlowFile_df.index)==0:
+        if (DEM_Reanalsyis_FlowFile_df.empty
+                or DEM_Reanalsyis_FlowFile_df['qout_max'].mean() <= 0
+                or len(DEM_Reanalsyis_FlowFile_df.index) == 0):
+
             print(f"Dam_Assessment: Results for {DEM} are not possible because we don't have streamflow estimates...")
             return
 
@@ -1219,8 +1267,14 @@ def process_dam(dam_dict):
         dem_bbox_gdf = dem_bbox_gdf.to_crs(stream_crs)
         bbox_geom = dem_bbox_gdf.geometry.iloc[0].bounds
 
-        StrmShp_gdf = gpd.read_file(StrmSHP, layer="geoglowsv2" if StrmSHP.endswith(".gdb") else None, engine='pyogrio',
-                                      bbox=bbox_geom)
+        if StrmSHP.endswith(".gdb"):
+            layer_name = "geoglowsv2"
+        elif "NHD" in StrmSHP:
+            layer_name = "NHDFlowline"
+        else:
+            layer_name = None
+
+        StrmShp_gdf = gpd.read_file(StrmSHP, layer=layer_name, engine='pyogrio', bbox=bbox_geom)
 
         print(f'Filtered stream features: {len(StrmShp_gdf)} (vs reading entire file)')
 
@@ -1239,7 +1293,7 @@ def process_dam(dam_dict):
 
     # Now go through each DEM dataset
     for DEM in DEM_List:
-        Dam_Assessment(DEM_Folder, DEM, dam, ESA_LC_Folder, STRM_Folder, LAND_Folder, FLOW_Folder,
+        Dam_Assessment(DEM_Folder, DEM, ESA_LC_Folder, STRM_Folder, LAND_Folder, FLOW_Folder,
                        VDT_Folder, ARC_Folder, BathyFileFolder, XS_Folder, ManningN, bathy_use_banks,
                        find_banks_based_on_landcover, create_reach_average_curve_file,
                        dam_csv, dam_id_field, dam_id, known_baseflow, known_channel_forming_discharge,

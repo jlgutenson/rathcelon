@@ -4,7 +4,6 @@
 import os
 import sys
 import geopandas as gpd   #conda install --channel conda-forge geopandas
-from osgeo import gdal
 
 # use requests library to download them
 import requests   #conda install anaconda::requests
@@ -13,11 +12,11 @@ from pathlib import Path    #conda install anaconda::pathlib
 from shapely.geometry import LineString, Polygon    #conda install conda-forge::shapely
 import numpy as np
 
-from pyproj import CRS
+# from pyproj import CRS
 
 try:
     import gdal     #conda install conda-forge::gdal
-except: 
+except ImportError:
     from osgeo import gdal
 
 
@@ -27,6 +26,7 @@ def Geom_Based_On_Country(country, Shapefile_Use):
     # get AOI geometry (Italy in this case)
     geom = ne[ne.NAME == country].iloc[0].geometry
     return geom
+
 
 def Download_ESA_WorldLandCover(output_folder, geom, year):
     s3_url_prefix = "https://esa-worldcover.s3.eu-central-1.amazonaws.com"
@@ -44,12 +44,12 @@ def Download_ESA_WorldLandCover(output_folder, geom, year):
     version = {2020: 'v100',
                2021: 'v200'}[year]
     
-    LC_List = []
+    lc_list = []
     for tile in tqdm(tiles.ll_tile):
         url = f"{s3_url_prefix}/{version}/{year}/map/ESA_WorldCover_10m_{year}_{version}_{tile}_Map.tif"
         r = requests.get(url, allow_redirects=True)
         out_fn = Path(output_folder) / Path(url).name
-        LC_List.append(str(out_fn))
+        lc_list.append(str(out_fn))
         if os.path.isfile(out_fn):
             print('Already Exists: ' + str(out_fn))
         else:
@@ -60,7 +60,7 @@ def Download_ESA_WorldLandCover(output_folder, geom, year):
     LandCoverFile = os.path.join(output_folder,"merged_ESA_LC.tif")
     
     # Merge rasters
-    merged_raster = gdal.Warp(LandCoverFile, LC_List, options=gdal.WarpOptions(format='GTiff'))
+    merged_raster = gdal.Warp(LandCoverFile, lc_list, options=gdal.WarpOptions(format='GTiff'))
 
     # Ensure data is written and file is closed properly
     if merged_raster:
@@ -136,17 +136,17 @@ def Read_Raster_GDAL(InRAST_Name):
     cellsize: float
         The pixel size of the raster longitudinally
     yll: float
-        The lowest latitude of the the raster
+        The lowest latitude of the raster
     yur: float
         The latitude of the top left corner of the top pixel of the raster
     xll: float
         The longitude of the top left corner of the top pixel of the raster
     xur: float
-        The highest longitude of the the raster
+        The highest longitude of the raster
     lat: float
         The average of the yur and yll latitude values
     geoTransform: list
-        A list of geotranform characteristics for the raster
+        A list of geotransform characteristics for the raster
     Rast_Projection:str
         The projection system reference for the raster
     """
@@ -166,25 +166,26 @@ def Read_Raster_GDAL(InRAST_Name):
     cellsize = geotransform[1]
     yll = geotransform[3] - nrows * np.fabs(geotransform[5])
     yur = geotransform[3]
-    xll = geotransform[0];
+    xll = geotransform[0]
     xur = xll + (ncols)*geotransform[1]
     lat = np.fabs((yll+yur)/2.0)
     Rast_Projection = dataset.GetProjectionRef()
-    dataset = None
-    print('Spatial Data for Raster File:')
-    print('   ncols = ' + str(ncols))
-    print('   nrows = ' + str(nrows))
-    print('   cellsize = ' + str(cellsize))
-    print('   yll = ' + str(yll))
-    print('   yur = ' + str(yur))
-    print('   xll = ' + str(xll))
-    print('   xur = ' + str(xur))
+    del dataset
+    print(f'Spatial Data for Raster File:\n'
+          f'\tncols = {ncols}\n'
+          f'\tnrows = {nrows}\n'
+          f'\tcellsize = {cellsize}\n'
+          f'\tyll = {yll}\n'
+          f'\tyur = {yur}\n'
+          f'\txll = {xll}\n'
+          f'\txur = {xur}')
+
     return RastArray, ncols, nrows, cellsize, yll, yur, xll, xur, lat, geotransform, Rast_Projection
 
 
 def Get_Raster_Details(DEM_File):
     """
-    Retrieves the geograhic details of a raster using GDAL in a slightly different way than Read_Raster_GDAL()
+    Retrieves the geographic details of a raster using GDAL in a slightly different way than Read_Raster_GDAL()
 
     Parameters
     ----------
@@ -196,9 +197,9 @@ def Get_Raster_Details(DEM_File):
     minx: float
         The longitude of the top left corner of the top pixel of the raster
     miny: 
-        The lowest latitude of the the raster
+        The lowest latitude of the raster
     maxx: 
-        The highest latitude of the the raster
+        The highest latitude of the raster
     maxy:
         The latitude of the top left corner of the top pixel of the raster
     dx: float
@@ -210,7 +211,7 @@ def Get_Raster_Details(DEM_File):
     nrows: int
         The raster height in pixels
     geoTransform: list
-        A list of geotranform characteristics for the raster
+        A list of geotransform characteristics for the raster
     Rast_Projection:str
         The projection system reference for the raster
     """
@@ -227,12 +228,13 @@ def Get_Raster_Details(DEM_File):
     maxx = minx + dx * ncols
     miny = maxy + dy * nrows
     Rast_Projection = data.GetProjectionRef()
-    data = None
+    del data
     return minx, miny, maxx, maxy, dx, dy, ncols, nrows, geoTransform, Rast_Projection
+
 
 def Create_AR_LandRaster(LandCoverFile, LAND_File, projWin_extents, ncols, nrows):
     """
-    Creates an land cover raster that is cloped to a specified extent and cell size
+    Creates a land cover raster that is clipped to a specified extent and cell size
     
    
     Parameters
@@ -258,14 +260,17 @@ def Create_AR_LandRaster(LandCoverFile, LAND_File, projWin_extents, ncols, nrows
     ds = None
     return
 
+
 def Create_Water_Mask(lc_file, waterboundary_file, watervalue):
     (RastArray, ncols, nrows, cellsize, yll, yur, xll, xur, lat, geotransform, Rast_Projection) = Read_Raster_GDAL(lc_file)
     RastArray = np.where(RastArray==watervalue,1,0)   #Streams are identified with zeros
     Write_Output_Raster(waterboundary_file, RastArray, ncols, nrows, geotransform, Rast_Projection, "GTiff", gdal.GDT_Byte)
     return
 
+
 def Get_Polygon_Geometry(lon_1, lat_1, lon_2, lat_2):
     return Polygon([[min(lon_1,lon_2),min(lat_1,lat_2)], [min(lon_1,lon_2),max(lat_1,lat_2)], [max(lon_1,lon_2),max(lat_1,lat_2)], [max(lon_1,lon_2),min(lat_1,lat_2)]])
+
 
 if __name__ == "__main__":
     
@@ -291,7 +296,7 @@ if __name__ == "__main__":
     
     
     ###Option 2 - Get Geometry from Lat/Long Bounding Coordinates
-    #Get Geomtery based on Latitude and Longitude
+    #Get Geometry based on Latitude and Longitude
     lat_1 = 42.5
     lat_2 = 43.0 
     lon_1 = -106.0 
@@ -306,9 +311,9 @@ if __name__ == "__main__":
     geom = Get_Polygon_Geometry(lon_1, lat_1, lon_2, lat_2)
     
     
-    LC_List = Download_ESA_WorldLandCover(output_folder, geom, year)
+    lc_list = Download_ESA_WorldLandCover(output_folder, geom, year)
     
-    for lc_file in LC_List:
+    for lc_file in lc_list:
         lc_file_str = str(lc_file)
         
         if DEM_File != '':
