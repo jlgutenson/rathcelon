@@ -65,11 +65,12 @@ def Download_ESA_WorldLandCover(output_folder, geom, year):
     # Ensure data is written and file is closed properly
     if merged_raster:
         merged_raster.FlushCache()  # Save changes
-        merged_raster = None  # Close dataset
+        del merged_raster  # Close dataset
 
     return LandCoverFile
 
-def Write_Output_Raster(s_output_filename, raster_data, ncols, nrows, dem_geotransform, dem_projection, s_file_format, s_output_type):   
+def Write_Output_Raster(s_output_filename: str, raster_data, ncols: int, nrows: int, dem_geotransform,
+                        dem_projection: str, s_file_format: str, s_output_type):
     """
     Creates a raster from the specified inputs using GDAL
        
