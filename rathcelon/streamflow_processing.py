@@ -4,13 +4,14 @@
 # third-party imports
 import geopandas as gpd
 import pandas as pd
-from pandas import DataFrame
 from shapely.geometry import Point
 import s3fs
 import xarray as xr
 import requests
 import io
 import time
+
+from .classes import Dam
 
 
 def get_nwm_rp(comids: list[int]):
@@ -34,29 +35,28 @@ def get_nwm_rp(comids: list[int]):
     return return_period_df
 
 
-def get_stream_coords(strmShp_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: list[int|str], method='centroid')\
-    -> dict[int|str, list[float]]:
+def get_stream_coords(stream_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: list[int|str], method='centroid'):
     """
 
     Parameters
     ----------
-    strmShp_gdf -
+    stream_gdf -
     rivid_field - either 'LINKNO' or 'hydroseq'
     rivids - list of all rivids...
     method - where we pull the coords from
 
-    Returns - each rivid and its coords
+    Returns
     -------
-
+    results - each rivid and its coords {rivid: [lat, lon]}
     """
     # Ensure original CRS is EPSG:4326 for lat/lon output
-    if strmShp_gdf.crs != "EPSG:4326":
-        strmShp_gdf = strmShp_gdf.to_crs("EPSG:4326")
+    if stream_gdf.crs != "EPSG:4326":
+        stream_gdf = strm_gdf.to_crs("EPSG:4326")
 
     result = {}
 
     for rivid in rivids:
-        match = strmShp_gdf[strmShp_gdf[rivid_field] == rivid]
+        match = stream_gdf[stream_gdf[rivid_field] == rivid]
 
         if match.empty:
             print(f"No match found for {rivid_field} = {rivid}" )
@@ -79,38 +79,26 @@ def get_stream_coords(strmShp_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: l
     return result
 
 
-def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, rivid_field: str, dam_csv: str,
-                                                 dam_id_field: str, dam_id: int, known_baseflow: float,
-                                                 known_channel_forming_discharge: float, CSV_File_Name: str,
-                                                 OutShp_File_Name: str)\
-    -> tuple[None, None, None, None] | tuple[str, str, list[int], DataFrame]:
+def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     """
 
     Parameters
     ----------
-    StrmShp_gdf
-    rivid_field: either 'LINKNO' or 'hydroseq'
-    dam_csv
-    dam_id_field
-    dam_id
-    known_baseflow
-    known_channel_forming_discharge
-    CSV_File_Name
-    OutShp_File_Name
+    dam: A Dam object... i'll write more later
     -------
 
     """
     # Load the dam data in as a geodataframe
     print('Process_and_Write_Retrospective_Data_for_Dam: Load the dam data in as a geodataframe')
-    dam_gdf = pd.read_csv(dam_csv)
+    dam_gdf = pd.read_csv(dam.csv_path)
     dam_gdf = gpd.GeoDataFrame(dam_gdf, geometry=gpd.points_from_xy(dam_gdf['longitude'], dam_gdf['latitude']),
                                crs="EPSG:4269")
 
     # Filter the dam data to the dam of interest
     print('Process_and_Write_Retrospective_Data_for_Dam: Filter the dam data to the dam of interest')
     print(dam_gdf.tail())
-    print(f'dam_id = {dam_id}')
-    dam_gdf = dam_gdf[dam_gdf[dam_id_field] == dam_id]
+    print(f'dam_id = {dam.dam_id}')
+    dam_gdf = dam_gdf[dam_gdf[dam.id_field] == dam.dam_id]
 
     # Ensure there is at least one row remaining
     print('Process_and_Write_Retrospective_Data_for_Dam: Ensure there is at least one row remaining')
@@ -125,44 +113,41 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
     print('Process_and_Write_Retrospective_Data_for_Dam: Convert both GeoDataFrames to a common projected CRS')
 
     # save the StrmShp CRS to convert StrmShp_filtered_gdf back to after the distance calculation
-    StrmShp_crs = StrmShp_gdf.crs
+    flowline_crs = dam.flowline_gdf.crs
 
     # Determine an appropriate UTM zone using GeoPandas
-    StrmShp_gdf = StrmShp_gdf[StrmShp_gdf.geometry.notnull()]
-    StrmShp_gdf = StrmShp_gdf[~StrmShp_gdf.geometry.is_empty]
+    dam.flowline_gdf = dam.flowline_gdf[dam.flowline_gdf.geometry.notnull()]
+    dam.flowline_gdf = dam.flowline_gdf[~dam.flowline_gdf.geometry.is_empty]
 
-    # print("StrmShp_gdf length:", len(StrmShp_gdf))
-    # print("Valid geometries:", StrmShp_gdf.geometry.notnull().sum())
-    # print("Non-empty geometries:", (~StrmShp_gdf.geometry.is_empty).sum())
 
-    if not StrmShp_gdf.empty:
-        utm_crs = StrmShp_gdf.estimate_utm_crs()
+    if not dam.flowline_gdf.empty:
+        utm_crs = dam.flowline_gdf.estimate_utm_crs()
     else:
-        raise ValueError("StrmShp_gdf has no valid geometries for UTM estimation.")
+        raise ValueError(f"{dam.flowline_gdf} has no valid geometries for UTM estimation.")
 
     # Reproject both GeoDataFrames to the UTM CRS
     dam_gdf = dam_gdf.to_crs(utm_crs)
-    StrmShp_gdf = StrmShp_gdf.to_crs(utm_crs)
+    dam.flowline_gdf = dam.flowline_gdf.to_crs(utm_crs)
 
     # Distance calculation
     print('Process_and_Write_Retrospective_Data_for_Dam: Find the closest stream using distance calculation')
-    StrmShp_gdf['distance'] = StrmShp_gdf.distance(dam_gdf.geometry.iloc[0])
-    StrmShp_gdf = StrmShp_gdf.sort_values('distance')
-    StrmShp_filtered_gdf = StrmShp_gdf.head(1)
+    dam.flowline_gdf['distance'] = dam.flowline_gdf.distance(dam_gdf.geometry.iloc[0])
+    dam.flowline_gdf = dam.flowline_gdf.sort_values('distance')
+    filtered_flowline_gdf = dam.flowline_gdf.head(1)
 
-    # convert StrmShp_gdf and StrmShp_filtered_gdf back to its original CRS for ARC to use
-    StrmShp_gdf = StrmShp_gdf.to_crs(StrmShp_crs)
-    StrmShp_filtered_gdf = StrmShp_filtered_gdf.to_crs(StrmShp_crs)
+    # convert flowline_gdf and filtered_flowline_gdf back to its original CRS for ARC to use
+    dam.flowline_gdf = dam.flowline_gdf.to_crs(flowline_crs)
+    filtered_flowline_gdf = filtered_flowline_gdf.to_crs(flowline_crs)
 
     # # Use the 'LINKNO' and 'DSLINKNO' fields to find the stream upstream and downstream of the dam
 
     # current_rivid = StrmShp_filtered_gdf['LINKNO'].values[0]
     # downstream_rivid = StrmShp_filtered_gdf['DSLINKNO'].values[0]
-    # upstream_StrmShp_gdf = StrmShp_gdf[StrmShp_gdf['DSLINKNO'] == current_rivid]
-    # downstream_StrmShp_gdf = StrmShp_gdf[StrmShp_gdf['LINKNO'] == downstream_rivid]
+    # upstream_gdf = dam.flowline_gdf[dam.flowline_gdf['DSLINKNO'] == current_rivid]
+    # downstream_gdf = dam.flowline_gdf[dam.flowline_gdf['LINKNO'] == downstream_rivid]
 
     # set the field names equal to the values as they appear in GEOGLOWS or NHDPlus
-    if rivid_field == 'LINKNO':
+    if dam.rivid_field == 'LINKNO':
         ds_rivid_field = 'DSLINKNO'
         stream_order_field = 'strmOrder'
 
@@ -173,18 +158,18 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
     # Use the 'LINKNO' and 'DSLINKNO' fields to find the stream upstream and downstream of the dam
     print('Process_and_Write_Retrospective_Data_for_Dam: Use the LINKNO and DSLINKNO (hydroseq and dnhydroseq) '
           'fields to find the stream upstream and downstream of the dam')
-    current_rivid = StrmShp_filtered_gdf[rivid_field].values[0]
-    downstream_rivid = StrmShp_filtered_gdf[ds_rivid_field].values[0]
+    current_rivid = filtered_flowline_gdf[dam.rivid_field].values[0]
+    downstream_rivid = filtered_flowline_gdf[ds_rivid_field].values[0]
 
     # Find the upstream segment (if needed)
     print('Process_and_Write_Retrospective_Data_for_Dam: Find the upstream segment (if needed)')
-    upstream_StrmShp_gdf = StrmShp_gdf[StrmShp_gdf[ds_rivid_field] == current_rivid]
+    upstream_gdf = dam.flowline_gdf[dam.flowline_gdf[ds_rivid_field] == current_rivid]
     # Select the upstream segment with the highest Stream Order, if needed
 
-    if not upstream_StrmShp_gdf.empty:
-        if stream_order_field in upstream_StrmShp_gdf.columns:
+    if not upstream_gdf.empty:
+        if stream_order_field in upstream_gdf.columns:
             # Use the highest stream order if available
-            upstream_StrmShp_gdf = upstream_StrmShp_gdf.loc[[upstream_StrmShp_gdf[stream_order_field].idxmax()]]
+            upstream_gdf = upstream_gdf.loc[[upstream_gdf[stream_order_field].idxmax()]]
         else:
             # Use all matching upstream segments
             print(f"Optional field '{stream_order_field}' not found — using all upstream matches.")
@@ -198,10 +183,10 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
     current_downstream_rivid = downstream_rivid
 
     # Loop to find up to 2 downstream segments. lol
-    print('Process_and_Write_Retrospective_Data_for_Dam: Loop to find up to 2 downstream segments.')
-    for i in range(2):
+    print('Process_and_Write_Retrospective_Data_for_Dam: Loop to find up to 3 downstream segments.')
+    for i in range(3):
         # Find the stream segment whose LINKNO matches the current downstream rivid.
-        segment = StrmShp_gdf[StrmShp_gdf[rivid_field] == current_downstream_rivid]
+        segment = dam.flowline_gdf[dam.flowline_gdf[dam.rivid_field] == current_downstream_rivid]
         
         # If no segment is found, break the loop.
         if segment.empty:
@@ -218,23 +203,23 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
     # Combine the downstream segments into one GeoDataFrame.
     print('Process_and_Write_Retrospective_Data_for_Dam: Combine the downstream segments into one GeoDataFrame.')
     if downstream_segments:
-        downstream_StrmShp_gdf = pd.concat(downstream_segments, ignore_index=True)
+        downstream_gdf = pd.concat(downstream_segments, ignore_index=True)
     else:
         # If no downstream segments were found, create an empty GeoDataFrame.
-        downstream_StrmShp_gdf = gpd.GeoDataFrame()
+        downstream_gdf = gpd.GeoDataFrame()
 
-    # merge the StrmShp_filtered_gdf, upstream_StrmShp_gdf, and downstream_StrmShp_gdf into a single geodataframe
-    print('Process_and_Write_Retrospective_Data_for_Dam: merge the StrmShp_filtered_gdf, upstream_StrmShp_gdf, and downstream_StrmShp_gdf into a single geodataframe')
-    StrmShp_filtered_gdf = pd.concat([StrmShp_filtered_gdf, upstream_StrmShp_gdf, downstream_StrmShp_gdf])
+    # merge the StrmShp_filtered_gdf, upstream_gdf, and downstream_gdf into a single geodataframe
+    print('Process_and_Write_Retrospective_Data_for_Dam: merge the filtered_flowline_gdf, upstream_gdf, and downstream_gdf into a single geodataframe')
+    StrmShp_filtered_gdf = pd.concat([filtered_flowline_gdf, upstream_gdf, downstream_gdf])
     
-    StrmShp_filtered_gdf.to_file(OutShp_File_Name)
-    StrmShp_filtered_gdf[rivid_field] = StrmShp_filtered_gdf[rivid_field].astype(int)
+    StrmShp_filtered_gdf.to_file(dam.dam_shp)
+    StrmShp_filtered_gdf[dam.rivid_field] = StrmShp_filtered_gdf[dam.rivid_field].astype(int)
 
     # create a list of river IDs to throw to AWS
     # rivids_str = StrmShp_filtered_gdf[rivid_field].astype(str).to_list()
-    rivids_int = StrmShp_filtered_gdf[rivid_field].astype(int).to_list()
+    rivids_int = StrmShp_filtered_gdf[dam.rivid_field].astype(int).to_list()
 
-    if rivid_field == 'LINKNO':
+    if dam.rivid_field == 'LINKNO':
         # Set up the S3 connection
         ODP_S3_BUCKET_REGION = 'us-west-2'
         s3 = s3fs.S3FileSystem(anon=True, client_kwargs=dict(region_name=ODP_S3_BUCKET_REGION))
@@ -254,11 +239,11 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
         # Check if fdc_df is empty
         if fdc_df.empty:
             # print(f"Skipping processing for {DEM_Tile} because fdc_df is empty.")
-            CSV_File_Name = None
-            OutShp_File_Name = None
+            dam.reanalysis_csv = None
+            dam.dam_shp = None
             rivids_int = None
             StrmShp_filtered_gdf = None
-            return CSV_File_Name, OutShp_File_Name, rivids_int, StrmShp_filtered_gdf
+            return dam.reanalysis_csv, dam.dam_shp, rivids_int, StrmShp_filtered_gdf
 
         # Create 'qout_median' column where 'p_exceed' is 50.0
         fdc_df.loc[fdc_df['p_exceed'] == 50.0, 'qout_median'] = fdc_df['hourly_annual']
@@ -297,11 +282,11 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
         # Check if rp_df is empty
         if rp_df.empty:
             # print(f"Skipping processing for {DEM_Tile} because rp_df is empty.")
-            CSV_File_Name = None
-            OutShp_File_Name = None
+            dam.reanalysis_csv = None
+            dam.dam_shp = None
             rivids_int = None
             StrmShp_filtered_gdf = None
-            return CSV_File_Name, OutShp_File_Name, rivids_int, StrmShp_filtered_gdf
+            return dam.reanalysis_csv, dam.dam_shp, rivids_int, StrmShp_filtered_gdf
 
         # Convert 'return_period' to category dtype
         rp_df['return_period'] = rp_df['return_period'].astype('category')
@@ -317,7 +302,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
         final_df = pd.concat([fdc_df, rp_pivot_df], axis=1)
 
     else:
-        strm_coords = get_stream_coords(StrmShp_gdf, rivid_field, rivids_int)
+        strm_coords = get_stream_coords(dam.flowline_gdf, dam.rivid_field, rivids_int)
         print(f'strm_coords: {strm_coords}')
         # use the nwm api to get reach_id based on lat lon...
         hydroseqs = []
@@ -406,18 +391,18 @@ def Process_and_Write_Retrospective_Data_for_Dam(StrmShp_gdf: gpd.GeoDataFrame, 
             final_df[f'{col}_premium'] = round(final_df[col]*1.5, 3)
 
     # add the known_baseflow column to the final_df
-    if known_baseflow is not None:
-        final_df['known_baseflow'] = known_baseflow
+    if dam.known_baseflow is not None:
+        final_df['known_baseflow'] = dam.known_baseflow
     
     # add the known_channel_forming_discharge column to the final_df
-    if known_channel_forming_discharge is not None:
-        final_df['known_channel_forming_discharge'] = known_channel_forming_discharge
+    if dam.known_channel_forming_discharge is not None:
+        final_df['known_channel_forming_discharge'] = dam.known_channel_forming_discharge
 
     # print(final_df)
 
     # Write the final Dask DataFrame to CSV
     print('Process_and_Write_Retrospective_Data_for_Dam: Write the final Dask DataFrame to CSV')
-    final_df.to_csv(CSV_File_Name, index=False)
+    final_df.to_csv(dam.reanalysis_csv, index=False)
     
     # Return the combined DataFrame as a Dask DataFrame
-    return CSV_File_Name, OutShp_File_Name, rivids_int, StrmShp_filtered_gdf
+    return rivids_int, StrmShp_filtered_gdf
