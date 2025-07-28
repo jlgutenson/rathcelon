@@ -1074,7 +1074,7 @@ class Dam:
         if (dem_reanalysis_flowfile_df.empty
                 or dem_reanalysis_flowfile_df['qout_max'].mean() <= 0
                 or len(dem_reanalysis_flowfile_df.index) == 0):
-            print(f"Dam_Assessment: Results for {DEM} are not possible because we don't have streamflow estimates...")
+            print(f"Dam_Assessment: Results for {dem} are not possible because we don't have streamflow estimates...")
             return
 
         # Create our Curve and VDT Database data

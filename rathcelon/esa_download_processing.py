@@ -1,18 +1,10 @@
 #Program downloads esa world land cover datasets and also creates a water mask
 #https://esa-worldcover.org/en/data-access
 
-import os
-import sys
-import geopandas as gpd   #conda install --channel conda-forge geopandas
-
 # use requests library to download them
 import requests     #conda install anaconda::requests
 from tqdm.auto import tqdm  # provides a progressbar     #conda install conda-forge::tqdm
-from pathlib import Path    #conda install anaconda::pathlib
 from shapely.geometry import Polygon    #, LineString    #conda install conda-forge::shapely
-import numpy as np
-
-# from pyproj import CRS
 
 try:
     import gdal     #conda install conda-forge::gdal

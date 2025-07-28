@@ -3,11 +3,9 @@ dask
 dataretrieval
 fiona
 gdal
-geoglows
 geojson
 geopandas
 netCDF4
-noise
 numpy
 pandas
 pillow==9.0.1

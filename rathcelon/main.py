@@ -14,12 +14,10 @@ Here is a list of where Low Head Dams are located.  What we're wanting to do:
 
 # build-in imports
 import os       # working with the operating system
-import sys      # working with the interpreter
 import argparse # parses command-line args
 # import multiprocessing as mp
 
 # third-party imports
-from pandas import DataFrame        # object for handling tabular data
 from geopandas import GeoDataFrame  # object for geospatial data + tabular data
 # import re
 # import subprocess
@@ -31,26 +29,10 @@ except ImportError:
     from osgeo import gdal, ogr, osr    # import from osgeo if direct import doesn't work
 
 import json         # json encoding/decoding
-import stat         # interpreting file status
-import fiona        # reading/writing vector spatial data
-import platform     # access information about system
-import rasterio     # raster data access/manipulation
-import numpy as np      # numerical + py = numpy
-import pandas as pd     # tabular data manipulation
-import networkx as nx       # network/graph analysis
-import geopandas as gpd     # geospatial + pandas = geopandas
-from pathlib import Path    # OOP - programming + filesystem paths
-from shapely.geometry import box, shape     # geometric shapes + manipulation
-from pyproj import CRS, Geod, Transformer   # CRS and transformations
 from shapely.geometry import Point, LineString #, MultiLineString, shape, mapping
-from shapely.ops import nearest_points, linemerge, transform #, split
-# import shutil
-from rasterio.features import rasterize
-# from rasterio.warp import calculate_default_transform, reproject, Resampling
+
 
 # local imports
-from . import streamflow_processing
-from . import esa_download_processing as esa
 from .classes import Dam
 
 

@@ -51,7 +51,7 @@ def get_stream_coords(stream_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: li
     """
     # Ensure original CRS is EPSG:4326 for lat/lon output
     if stream_gdf.crs != "EPSG:4326":
-        stream_gdf = strm_gdf.to_crs("EPSG:4326")
+        stream_gdf = stream_gdf.to_crs("EPSG:4326")
 
     result = {}
 
