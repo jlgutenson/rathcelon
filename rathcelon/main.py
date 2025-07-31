@@ -15,13 +15,9 @@ Here is a list of where Low Head Dams are located.  What we're wanting to do:
 # build-in imports
 import os       # working with the operating system
 import argparse # parses command-line args
-# import multiprocessing as mp
 
 # third-party imports
 from geopandas import GeoDataFrame  # object for geospatial data + tabular data
-# import re
-# import subprocess
-# from datetime import datetime, timedelta
 
 try:
     import gdal                         # geospatial data abstraction library (gdal)
@@ -31,12 +27,11 @@ except ImportError:
 import json         # json encoding/decoding
 from shapely.geometry import Point, LineString #, MultiLineString, shape, mapping
 
-
 # local imports
 from .classes import Dam
 
 
-def Create_FlowFile(MainFlowFile: str, FlowFileName: str, OutputID: int|str, Qparam: str) -> None:
+def create_flowfile(MainFlowFile: str, FlowFileName: str, OutputID: int|str, Qparam: str) -> None:
     with open(MainFlowFile, 'r') as infile:
         lines = infile.readlines()
 
@@ -150,7 +145,6 @@ def process_json_input(json_file):
         print(f"Processing dam: {dam_name} with parameters: {dam_dict}")
 
         # Call your existing processing logic here
-        # process_dam(dam_dict)
         Dam(**dam_dict)
 
 

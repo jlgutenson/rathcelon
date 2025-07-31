@@ -184,7 +184,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
 
     # Loop to find up to 2 downstream segments. lol
     print('Process_and_Write_Retrospective_Data_for_Dam: Loop to find up to 3 downstream segments.')
-    for i in range(3):
+    for i in range(4):
         # Find the stream segment whose LINKNO matches the current downstream rivid.
         segment = dam.flowline_gdf[dam.flowline_gdf[dam.rivid_field] == current_downstream_rivid]
         
@@ -304,7 +304,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     else:
         strm_coords = get_stream_coords(dam.flowline_gdf, dam.rivid_field, rivids_int)
         print(f'strm_coords: {strm_coords}')
-        # use the nwm api to get reach_id based on lat lon...
+
         hydroseqs = []
         reach_ids = []
 
@@ -315,7 +315,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
             retries = 3
             for attempt in range(retries):
                 try:
-                    r = requests.get(url, timeout=30)  # 30s max wait per request
+                    r = requests.get(url, timeout=30)
                     r.raise_for_status()
 
                     df = pd.read_csv(io.StringIO(r.text))
@@ -323,57 +323,117 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
 
                     hydroseqs.append(key)
                     reach_ids.append(reach_id)
-                    break  # success, exit retry loop
+                    break
 
                 except (requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
                     print(f"Request failed for key={key} lat={lat} lon={lon}, attempt {attempt + 1}/{retries}")
                     print(f"Error: {e}")
-
                     if attempt < retries - 1:
                         wait = 2 ** attempt
                         print(f"Retrying in {wait} seconds...")
                         time.sleep(wait)
                     else:
                         print("Giving up on this point.\n")
-                        continue  # skip this point after final failure
+                        continue
 
-        # now hydroseq_reach_id has each hydroseq matched with its reach_id
-
-        # we don't really need the median or max flow... so this may be useful later, but i'll comment it out for now
-        # if known_baseflow is None:
-        s3_path = 's3://noaa-nwm-retrospective-3-0-pds/CONUS/zarr/chrtout.zarr'
-        fs = s3fs.S3FileSystem(anon=True)
-        nwm_ds = xr.open_zarr(fs.get_mapper(s3_path), consolidated=True)
-        reach_ds = nwm_ds['streamflow'].sel(feature_id=reach_ids)
-        df = reach_ds.to_dataframe().reset_index()
-        df = df.groupby("feature_id").agg(
-            qout_median=("streamflow", "median"),
-            qout_max=("streamflow", "max"),
-        ).round(3)
-        df.index.name = 'river_id'
-
-        # else:
-        #     df = pd.DataFrame({'river_id': reach_ids,
-        #                        'qout_median': 1,
-        #                        'qout_max': 100,}).set_index('river_id')
-
-        # Get return period DataFrame
+        # Fetch return periods (rp2, rp100, etc.)
         rp_df = get_nwm_rp(reach_ids)
 
-        # Merge it with df on index (river_id)
-        final_df = pd.concat([df, rp_df], axis=1)
+        # Add derived flows directly to rp_df without dropping anything
+        rp_df["qout_median"] = (rp_df["rp2"] / 2).round(3)
+        rp_df["qout_max"] = (rp_df["rp100"] * 1.5).round(3)
 
-        # Create a DataFrame to map hydroseq to river_id and join it in
+        # Reorder columns so qout_median and qout_max come first
+        cols = ["qout_median", "qout_max"] + [col for col in rp_df.columns if col.startswith("rp")]
+        rp_df = rp_df[cols]
+
+        # Map hydroseqs to river IDs
         map_df = pd.DataFrame({'hydroseq': hydroseqs, 'river_id': reach_ids})
 
-        # Merge map_df with final_df on river_id, set hydroseq as index, and drop river_id
-        final_df = map_df.merge(final_df, on='river_id') \
+        # Merge and reshape
+        final_df = map_df.merge(rp_df, on='river_id') \
             .set_index('hydroseq') \
             .drop(columns='river_id')
 
-        # Rename the index to river_id
+        # Set index name for clarity
         final_df.index.name = 'river_id'
+
         print(final_df)
+
+
+    # else:
+    #     strm_coords = get_stream_coords(dam.flowline_gdf, dam.rivid_field, rivids_int)
+    #     print(f'strm_coords: {strm_coords}')
+    #     # use the nwm api to get reach_id based on lat lon...
+    #     hydroseqs = []
+    #     reach_ids = []
+    #
+    #     for key, value in strm_coords.items():
+    #         lat, lon = value
+    #         url = f"https://nwm-api.ciroh.org/geometry?lat={lat}&lon={lon}&output_format=csv&key=AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II"
+    #
+    #         retries = 3
+    #         for attempt in range(retries):
+    #             try:
+    #                 r = requests.get(url, timeout=30)  # 30s max wait per request
+    #                 r.raise_for_status()
+    #
+    #                 df = pd.read_csv(io.StringIO(r.text))
+    #                 reach_id = df['station_id'].values[0]
+    #
+    #                 hydroseqs.append(key)
+    #                 reach_ids.append(reach_id)
+    #                 break  # success, exit retry loop
+    #
+    #             except (requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
+    #                 print(f"Request failed for key={key} lat={lat} lon={lon}, attempt {attempt + 1}/{retries}")
+    #                 print(f"Error: {e}")
+    #
+    #                 if attempt < retries - 1:
+    #                     wait = 2 ** attempt
+    #                     print(f"Retrying in {wait} seconds...")
+    #                     time.sleep(wait)
+    #                 else:
+    #                     print("Giving up on this point.\n")
+    #                     continue  # skip this point after final failure
+    #
+    #     # now hydroseq_reach_id has each hydroseq matched with its reach_id
+    #
+    #     # we don't really need the median or max flow... so this may be useful later, but i'll comment it out for now
+    #     # if known_baseflow is None:
+    #     s3_path = 's3://noaa-nwm-retrospective-3-0-pds/CONUS/zarr/chrtout.zarr'
+    #     fs = s3fs.S3FileSystem(anon=True)
+    #     nwm_ds = xr.open_zarr(fs.get_mapper(s3_path), consolidated=True)
+    #     reach_ds = nwm_ds['streamflow'].sel(feature_id=reach_ids)
+    #     df = reach_ds.to_dataframe().reset_index()
+    #     df = df.groupby("feature_id").agg(
+    #         qout_median=("streamflow", "median"),
+    #         qout_max=("streamflow", "max"),
+    #     ).round(3)
+    #     df.index.name = 'river_id'
+    #
+    #     # else:
+    #     #     df = pd.DataFrame({'river_id': reach_ids,
+    #     #                        'qout_median': 1,
+    #     #                        'qout_max': 100,}).set_index('river_id')
+    #
+    #     # Get return period DataFrame
+    #     rp_df = get_nwm_rp(reach_ids)
+    #
+    #     # Merge it with df on index (river_id)
+    #     final_df = pd.concat([df, rp_df], axis=1)
+    #
+    #     # Create a DataFrame to map hydroseq to river_id and join it in
+    #     map_df = pd.DataFrame({'hydroseq': hydroseqs, 'river_id': reach_ids})
+    #
+    #     # Merge map_df with final_df on river_id, set hydroseq as index, and drop river_id
+    #     final_df = map_df.merge(final_df, on='river_id') \
+    #         .set_index('hydroseq') \
+    #         .drop(columns='river_id')
+    #
+    #     # Rename the index to river_id
+    #     final_df.index.name = 'river_id'
+    #     print(final_df)
 
     final_df['COMID'] = final_df.index
 

@@ -24,7 +24,7 @@ def Geom_Based_On_Country(country, Shapefile_Use):
     return geom
 
 
-def Download_ESA_WorldLandCover(output_dir, geom, year):
+def Download_ESA_WorldLandCover(output_dir, geom, year=2021):
     s3_url_prefix = "https://esa-worldcover.s3.eu-central-1.amazonaws.com"
     # load natural earth low res shapefile
     
@@ -53,7 +53,7 @@ def Download_ESA_WorldLandCover(output_dir, geom, year):
                 f.write(r.content)
 
     # let's merge the list of tiles together
-    LandCoverFile = os.path.join(output_dir,"merged_ESA_LC.tif")
+    LandCoverFile = os.path.join(output_dir, "merged_ESA_LC.tif")
     
     # Merge rasters
     merged_raster = gdal.Warp(LandCoverFile, lc_list, options=gdal.WarpOptions(format='GTiff'))
@@ -83,10 +83,10 @@ if __name__ == "__main__":
     #Just leave blank if using Option 1 or 2 below
     if len(sys.argv) > 1:
         DEM_File = sys.argv[1]
-        print('Input DEM File: ' + DEM_File)
+        print(f'Input DEM File: {DEM_File}')
     else:
         DEM_File = 'NED_n39w090_Clipped.tif'
-        print('Did not input DEM, going with default: ' + DEM_File)
+        print(f'Did not input DEM, going with default: {DEM_File}')
     
     
     year = 2021  # setting this to 2020 will download the v100 product instead
@@ -124,9 +124,9 @@ if __name__ == "__main__":
         if DEM_File != '':
             LAND_File_Clipped = lc_file_str.replace('.tif','_Clipped.tif')
             if os.path.isfile(LAND_File_Clipped):
-                print('Already Exists: ' + str(LAND_File_Clipped))
+                print(f'Already Exists: {LAND_File_Clipped}')
             else:
-                print('Creating: ' + str(LAND_File_Clipped))
+                print(f'Creating: {LAND_File_Clipped}')
                 create_arc_lc_raster(lc_file_str, LAND_File_Clipped, [lon_1, lat_2, lon_2, lat_1], ncols, nrows)
             # lc_file_str = LAND_File_Clipped
             

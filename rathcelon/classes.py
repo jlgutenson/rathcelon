@@ -27,7 +27,6 @@ from shapely.ops import nearest_points, linemerge, transform #, split
 from rasterio.features import rasterize
 
 # local imports
-from . import streamflow_processing
 from . import esa_download_processing as esa
 
 
@@ -326,6 +325,10 @@ def create_arc_strm_raster(StrmSHP: str, output_raster_path: str, DEM_File: str,
         out_shape = (ref.height, ref.width)
         crs = ref.crs
 
+    print(f"gdf.crs: {gdf.crs}")
+    print(f"raster crs: {crs}")
+    print(f"gdf.crs == crs? {gdf.crs == crs}")
+
     # Reproject the shapefile to match reference CRS
     if gdf.crs != crs:
         gdf = gdf.to_crs(crs)
@@ -338,7 +341,7 @@ def create_arc_strm_raster(StrmSHP: str, output_raster_path: str, DEM_File: str,
     raster = rasterize(shapes=shapes, out_shape=out_shape, fill=0, transform=ref_transform, dtype='int64')
 
     # Update metadata
-    meta.update({"driver": "GTiff", "dtype": "int64", "count": 1, "compress": "lzw"})
+    meta.update({"driver": "GTiff", "dtype": "int64", "count": 1, "compress": "lzw", "nodata": 0})
 
     # Write to file
     with rasterio.open(output_raster_path, 'w', **meta) as dst:
@@ -494,7 +497,7 @@ class Dam:
 
 
         # Read stream shapefile and dam locations
-        Dam_StrmShp_gdf = gpd.read_file(self.dam_shp, engine='pyogrio')
+        Dam_StrmShp_gdf = gpd.read_file(self.dam_shp, engine='fiona')
         dam_gdf = pd.read_csv(self.csv_path)
         dam_gdf = gpd.GeoDataFrame(dam_gdf, geometry=gpd.points_from_xy(dam_gdf['longitude'], dam_gdf['latitude']),
                                    crs="EPSG:4269")
@@ -595,6 +598,7 @@ class Dam:
 
                 # Find how far along seg_line our current_point lies
                 proj_distance = seg_line.project(current_point)
+                print(f'proj_distance: {proj_distance}')
                 distance_remaining_in_seg = seg_line.length - proj_distance
 
                 if distance_remaining_in_seg >= remaining_distance_to_travel:
@@ -613,10 +617,7 @@ class Dam:
 
             # At this point, current_point has moved exactly tw meters from its previous location.
             # Record the result (convert to EPSG:4326 if needed).
-            downstream_point = (
-                gpd.GeoSeries([current_point], crs=projected_crs)
-                .geometry.iloc[0]
-            )
+            downstream_point = (gpd.GeoSeries([current_point], crs=projected_crs).geometry.iloc[0])
             dam_ids.append(self.dam_id)
             link_nos.append(current_link)
             points_of_interest.append(downstream_point)
@@ -634,6 +635,7 @@ class Dam:
 
         self.curve_data_gdf = gpd.GeoDataFrame(curve_data_df, geometry=gpd.points_from_xy(curve_data_df['Lon'], curve_data_df['Lat']), crs="EPSG:4269")
         self.vdt_gdf = gpd.GeoDataFrame(vdt_df, geometry=gpd.points_from_xy(vdt_df['Lon'], vdt_df['Lat']), crs="EPSG:4269")
+        self.curve_data_gdf.to_file('./test.gpkg')
 
         # Convert all to projected CRS
         self.curve_data_gdf, self.vdt_gdf = (gdf.to_crs(projected_crs) for gdf in [self.curve_data_gdf, self.vdt_gdf])
@@ -677,6 +679,7 @@ class Dam:
 
             # check elevation change
             elev_diff = abs(current_base_elev - last_base_elev)
+            print(f'current_base_elev: {current_base_elev}')
             if elev_diff >= self.upstream_elevation_change_threshold:
                 print(f"Reached threshold to find upstream cross-section:"
                       f"distance = {distance:.3f} and Δ elevation = {elev_diff:.3f}")
@@ -795,6 +798,7 @@ class Dam:
             else:
                 self.rivid_field = 'hydroseq'
             print('Running Function: Process_and_Write_Retrospective_Data_for_Dam')
+            from . import streamflow_processing
             streamflow_processing.Process_and_Write_Retrospective_Data_for_Dam(self)
 
         # Create Stream Raster
@@ -898,34 +902,42 @@ class Dam:
 
             test_dem_path = os.path.join(self.dem_dir, test_dem)
 
-            # Get DEM bounds and CRS using GDAL (more efficient than opening full raster)
-            raster_dataset = gdal.Open(test_dem_path)
-            gt = raster_dataset.GetGeoTransform()
+            with rasterio.open(test_dem_path) as src:
+                dem_bounds = src.bounds  # (left, bottom, right, top)
+                dem_crs = src.crs  # Can be passed directly to GeoDataFrame
 
-            # Get the bounds of the raster (xmin, ymin, xmax, ymax)
-            xmin = gt[0]
-            xmax = xmin + gt[1] * raster_dataset.RasterXSize
-            ymin = gt[3] + gt[5] * raster_dataset.RasterYSize
-            ymax = gt[3]
+            # Create bounding box and GeoDataFrame
+            dem_bbox_geom = box(*dem_bounds)
+            dem_bbox_gdf = gpd.GeoDataFrame(geometry=[dem_bbox_geom], crs=dem_crs)
 
-            # Get DEM CRS
-            dem_proj = raster_dataset.GetProjection()
-            dem_spatial_ref = osr.SpatialReference()
-            dem_spatial_ref.ImportFromWkt(dem_proj)
-            dem_spatial_ref.AutoIdentifyEPSG()
-            dem_epsg_code = dem_spatial_ref.GetAuthorityCode(None)
+            # # Get DEM bounds and CRS using GDAL (more efficient than opening full raster)
+            # raster_dataset = gdal.Open(test_dem_path)
+            # gt = raster_dataset.GetGeoTransform()
+            #
+            # # Get the bounds of the raster (xmin, ymin, xmax, ymax)
+            # xmin = gt[0]
+            # xmax = xmin + gt[1] * raster_dataset.RasterXSize
+            # ymin = gt[3] + gt[5] * raster_dataset.RasterYSize
+            # ymax = gt[3]
+            #
+            # # Get DEM CRS
+            # dem_proj = raster_dataset.GetProjection()
+            # dem_spatial_ref = osr.SpatialReference()
+            # dem_spatial_ref.ImportFromWkt(dem_proj)
+            # dem_spatial_ref.AutoIdentifyEPSG()
+            # dem_epsg_code = dem_spatial_ref.GetAuthorityCode(None)
+            #
+            # # Close the raster dataset
+            # del raster_dataset
+            #
+            # # Create bounding box in DEM CRS
+            # dem_bbox = (xmin, ymin, xmax, ymax)
+            #
+            # dem_bounds_geom = box(*dem_bbox)
+            # dem_bbox_gdf = gpd.GeoDataFrame(geometry=[dem_bounds_geom], crs=f"EPSG:{dem_epsg_code}")
 
-            # Close the raster dataset
-            del raster_dataset
-
-            # Create bounding box in DEM CRS
-            dem_bbox = (xmin, ymin, xmax, ymax)
-
-            dem_bounds_geom = box(*dem_bbox)
-            dem_bbox_gdf = gpd.GeoDataFrame(geometry=[dem_bounds_geom], crs=f"EPSG:{dem_epsg_code}")
-
-            print(f'DEM bounds: {dem_bbox}')
-            print(f'DEM CRS: {dem_epsg_code}')
+            print(f'DEM bounds: {dem_bounds}')
+            print(f'DEM CRS: {dem_crs}')
 
             # Read stream file with bbox filter (much more efficient!)
             if self.flowline.name.endswith(".gdb"):
@@ -937,7 +949,7 @@ class Dam:
                 stream_meta = gpd.read_file(self.flowline, rows=1)
                 stream_crs = stream_meta.crs
             else:
-                stream_crs = f"EPSG:{dem_epsg_code}"
+                stream_crs = f"EPSG:{dem_crs}"
 
             dem_bbox_gdf = dem_bbox_gdf.to_crs(stream_crs)
             bbox_geom = dem_bbox_gdf.geometry.iloc[0].bounds
@@ -949,7 +961,7 @@ class Dam:
             else:
                 layer_name = None
 
-            self.flowline_gdf = gpd.read_file(self.flowline, layer=layer_name, engine='pyogrio', bbox=bbox_geom)
+            self.flowline_gdf = gpd.read_file(self.flowline, layer=layer_name, engine='fiona', bbox=bbox_geom)
 
             print(f'Filtered stream features: {len(self.flowline_gdf)} (vs reading entire file)')
 
@@ -959,12 +971,12 @@ class Dam:
             print('Converting the coordinate system of the stream file to match the DEM files, if necessary')
 
             # Check if stream CRS matches DEM CRS
-            if self.flowline_gdf.crs != f"EPSG:{dem_epsg_code}":
+            if self.flowline_gdf.crs != dem_crs:
                 print("DEM and Stream Network have different coordinate systems...")
                 print(f"Stream CRS: {self.flowline_gdf.crs}")
-                print(f"DEM CRS: EPSG:{dem_epsg_code}")
+                print(f"DEM CRS: {dem_crs}")
                 # Reproject the stream data to match DEM CRS
-                self.flowline_gdf = self.flowline_gdf.to_crs(f"EPSG:{dem_epsg_code}")
+                self.flowline_gdf = self.flowline_gdf.to_crs(dem_crs)
 
         # Now go through each DEM dataset
         for DEM in DEM_List:
@@ -1005,7 +1017,7 @@ class Dam:
         self.arc_input = os.path.join(self.arc_dir, f'ARC_Input_{self.dam_id}.txt')
 
         # Datasets to be Created
-        self.dam_shp = os.path.join(self.strm_dir, f"{self.dam_id}_StrmShp.shp")
+        self.dam_shp = os.path.join(self.strm_dir, f"{self.dam_id}_StrmShp.gpkg")
         self.reanalysis_csv = os.path.join(self.flow_dir, f"{self.dam_id}_Reanalysis.csv")
 
         self.strm_tif = os.path.join(self.strm_dir, f'{self.dam_id}_STRM_Raster.tif')
@@ -1016,13 +1028,13 @@ class Dam:
         self.curvefile_csv = os.path.join(self.vdt_dir, f'{self.dam_id}_CurveFile.csv')
 
         # these are the files that will be created by the code
-        Local_VDT_File = os.path.join(self.vdt_dir, f'{self.dam_id}_Local_VDT_Database.shp')
-        Local_Curve_File = os.path.join(self.vdt_dir, f'{self.dam_id}_Local_CurveFile.shp')
+        local_vdt_shp = os.path.join(self.vdt_dir, f'{self.dam_id}_Local_VDT_Database.gpkg')
+        local_cf_shp = os.path.join(self.vdt_dir, f'{self.dam_id}_Local_CurveFile.gpkg')
 
         self.bathy_tif = os.path.join(self.bathy_dir, f'{self.dam_id}_ARC_Bathy.tif')
 
         self.xs_txt = os.path.join(self.xs_dir, f'{self.dam_id}_XS_Out.txt')
-        Local_XS_File = os.path.join(self.xs_dir, f'{self.dam_id}_Local_XS_Lines.shp')
+        local_xs_shp = os.path.join(self.xs_dir, f'{self.dam_id}_Local_XS_Lines.gpkg')
 
         # Get the details of the DEM file
         lon_1, lat_1, lon_2, lat_2, dx, dy, ncols, nrows, geoTransform, self.rast_proj = get_raster_info(self.dem_tif)
@@ -1030,11 +1042,16 @@ class Dam:
         # set up a WGS84 ellipsoid
         geod = Geod(ellps='WGS84')
 
-        # horizontal distance: from (lon1,lat1) to (lon1+dx, lat1)
-        _, _, res_x_m = geod.inv(lon_1, lat_1, lon_1 + dx, lat_1)
+        raster_crs = CRS.from_wkt(self.rast_proj)  # or use src.crs directly if you have it
 
-        # vertical distance: from (lon1,lat1) to (lon1, lat1+dy)
-        _, _, res_y_m = geod.inv(lon_1, lat_1, lon_1, lat_1 + dy)
+        if raster_crs.is_geographic:
+            # Use geod.inv as before (your original logic), assuming lon/lat in degrees
+            _, _, res_x_m = geod.inv(lon_1, lat_1, lon_1 + dx, lat_1)
+            _, _, res_y_m = geod.inv(lon_1, lat_1, lon_1, lat_1 + dy)
+        else:
+            # It's already in meters — just use dx, dy directly
+            res_x_m = dx
+            res_y_m = abs(dy)
 
         print(f"Dam Assessment: Exact pixel size of DEM: {res_x_m:.3f} m × {res_y_m:.3f} m")
 
@@ -1049,7 +1066,6 @@ class Dam:
             geom = esa.Get_Polygon_Geometry(lon_1, lat_1, lon_2, lat_2)
 
             # Check if raster projection is WGS 84
-            raster_crs = CRS.from_wkt(self.rast_proj)
             wgs84_crs = CRS.from_epsg(4326)
 
             if raster_crs != wgs84_crs:
@@ -1057,17 +1073,11 @@ class Dam:
                 transformer = Transformer.from_crs(raster_crs, wgs84_crs, always_xy=True)
                 geom = transform(transformer.transform, geom)
 
-            self.lc_tif = esa.Download_ESA_WorldLandCover(self.esa_lc_dir, geom, 2021)
+            self.lc_tif = esa.Download_ESA_WorldLandCover(self.esa_lc_dir, geom)
 
         # This function sets-up the Input files for ARC and FloodSpreader
         # It also does some of the geospatial processing
         self._process_geospatial_data()
-            # = Process_Geospatial_Data(ARC_FileName_Bathy, self.dem_tif, self.lc_tif, self.strm_tif, self.strm_tif_clean,
-            #                           self.land_tif, self.manning, VDT_File, Curve_File, ARC_BathyFile, Dam_StrmShp,
-            #                           Dam_Reanalsyis_FlowFile, XS_Out_File, self.bathy_use_banks,
-            #                           self.find_banks_based_on_landcover, self.create_reach_average_curve_file, self.csv_path,
-            #                           self.id_field, self.dam_id, self.known_baseflow, self.known_channel_forming_discharge,
-            #                           self.flowline_gdf)
 
         # read in the reanalysis streamflow and break the code if the dataframe is empty or if the streamflow is all 0
         dem_reanalysis_flowfile_df = pd.read_csv(self.reanalysis_csv)
@@ -1087,7 +1097,7 @@ class Dam:
         self._find_strm_up_downstream()
 
         # output the results to shapefiles
-        self.vdt_gdf.to_file(Local_VDT_File)
-        self.curve_data_gdf.to_file(Local_Curve_File)
-        self.xs_gdf.to_file(Local_XS_File)
+        self.vdt_gdf.to_file(local_vdt_shp)
+        self.curve_data_gdf.to_file(local_cf_shp)
+        self.xs_gdf.to_file(local_xs_shp)
         
