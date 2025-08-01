@@ -435,8 +435,18 @@ class Dam:
         self.known_channel_forming_discharge = kwargs.get('known_channel_forming_discharge', None)
         self.upstream_elevation_change_threshold = kwargs.get('upstream_elevation_change_threshold', 1.0)
 
-        # process the dam
-        self._process_dam()
+        # folder locations:
+        self.arc_dir = None
+        self.bathy_dir = None
+        self.strm_dir = None
+        self.land_dir = None
+        self.flow_dir = None
+        self.vdt_dir = None
+        self.esa_lc_dir = None
+        self.xs_dir = None
+        self.manning = None
+
+        self.flowline_gdf = None
 
 
     def _create_arc_input_txt(self, comid, Q_baseflow, Q_max):
@@ -497,14 +507,14 @@ class Dam:
 
 
         # Read stream shapefile and dam locations
-        Dam_StrmShp_gdf = gpd.read_file(self.dam_shp, engine='fiona')
+        dam_flowline_gdf = gpd.read_file(self.dam_shp, engine='fiona')
         dam_gdf = pd.read_csv(self.csv_path)
         dam_gdf = gpd.GeoDataFrame(dam_gdf, geometry=gpd.points_from_xy(dam_gdf['longitude'], dam_gdf['latitude']),
                                    crs="EPSG:4269")
 
         # Convert to a projected CRS for accurate distance calculations
-        projected_crs = Dam_StrmShp_gdf.estimate_utm_crs()
-        Dam_StrmShp_gdf = Dam_StrmShp_gdf.to_crs(projected_crs)
+        projected_crs = dam_flowline_gdf.estimate_utm_crs()
+        dam_flowline_gdf = dam_flowline_gdf.to_crs(projected_crs)
         dam_gdf = dam_gdf.to_crs(projected_crs)
 
         # Filter to the specific dam
@@ -518,26 +528,37 @@ class Dam:
         # **1. Build a Directed Graph Using LINKNO and DSLINKNO**
         G = nx.DiGraph()
 
-        if 'LINKNO' in Dam_StrmShp_gdf.columns:
+        if 'LINKNO' in dam_flowline_gdf.columns:
             rivid_field = 'LINKNO'
             ds_rivid_field = 'DSLINKNO'
         else:
             rivid_field = 'hydroseq'
             ds_rivid_field = 'dnhydroseq'
 
-
-
-        for _, row in Dam_StrmShp_gdf.iterrows():
+        for _, row in dam_flowline_gdf.iterrows():
             link_id = row[rivid_field]
             ds_link_id = row[ds_rivid_field]
             geometry = row.geometry
+
+            if rivid_field == 'hydroseq':
+                if isinstance(geometry, LineString):
+                    geometry = LineString(list(geometry.coords)[::-1])
+                elif isinstance(geometry, MultiLineString):
+                    # Merge parts to a single LineString if possible
+                    merged = linemerge(geometry)
+                    if isinstance(merged, LineString):
+                        geometry = LineString(list(merged.coords)[::-1])
+                    else:
+                        # If still multipart, you might need custom handling,
+                        # but as a fallback just keep as is or raise an error
+                        geometry = merged  # or handle differently
 
             if ds_link_id > 0:  # Ignore terminal reaches
                 G.add_edge(link_id, ds_link_id, geometry=geometry, weight=geometry.length)
 
         # Find the Closest Stream to the Dam**
-        Dam_StrmShp_gdf['distance'] = Dam_StrmShp_gdf.distance(dam_point)
-        closest_stream = Dam_StrmShp_gdf.loc[Dam_StrmShp_gdf['distance'].idxmin()]
+        dam_flowline_gdf['distance'] = dam_flowline_gdf.distance(dam_point)
+        closest_stream = dam_flowline_gdf.loc[dam_flowline_gdf['distance'].idxmin()]
         start_link = closest_stream[rivid_field]
 
         # Get the dam’s intersection point on the stream
@@ -603,6 +624,7 @@ class Dam:
                 # Find how far along seg_line our current_point lies
                 proj_distance = seg_line.project(current_point)
                 print(f'proj_distance: {proj_distance}')
+
                 distance_remaining_in_seg = seg_line.length - proj_distance
 
                 if distance_remaining_in_seg >= remaining_distance_to_travel:
@@ -831,7 +853,7 @@ class Dam:
             self.lc_tif = update_crs(self.dem_tif, self.lc_tif)
             create_arc_lc_raster(self.lc_tif, self.land_tif, projWin_extents, ncols, nrows)
 
-        # now we need to figure out if our Dam_StrmShp and dem_reanalysis_flowfile exists and if not, create it
+        # now we need to figure out if our dam_flowline and dem_reanalysis_flowfile exists and if not, create it
         if os.path.isfile(self.dam_shp) and os.path.isfile(self.reanalysis_csv):
             print(f'{self.dam_shp} Already Exists\n'
                   f'{self.reanalysis_csv} Already Exists')
@@ -914,8 +936,7 @@ class Dam:
         self._create_arc_input_txt("COMID", Q_bf_param, 'rp2')
 
 
-    def _process_dam(self):
-
+    def process_dam(self):
         # Folder Management
         self.arc_dir = os.path.join(self.output_dir, f'{self.name}', 'ARC_InputFiles')
         self.bathy_dir = os.path.join(self.output_dir, f'{self.name}', 'Bathymetry')
@@ -1027,8 +1048,7 @@ class Dam:
             # Check if stream CRS matches DEM CRS
             if self.flowline_gdf.crs != dem_crs:
                 print("DEM and Stream Network have different coordinate systems...")
-                print(f"Stream CRS: {self.flowline_gdf.crs}")
-                print(f"DEM CRS: {dem_crs}")
+                print(f"Stream CRS: {self.flowline_gdf.crs}, and DEM CRS: {dem_crs}")
                 # Reproject the stream data to match DEM CRS
                 self.flowline_gdf = self.flowline_gdf.to_crs(dem_crs)
 

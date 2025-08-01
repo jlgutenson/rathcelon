@@ -145,7 +145,8 @@ def process_json_input(json_file):
         print(f"Processing dam: {dam_name} with parameters: {dam_dict}")
 
         # Call your existing processing logic here
-        Dam(**dam_dict)
+        dam_i = Dam(**dam_dict)
+        dam_i.process_dam()
 
 
 def normalize_path(path):
@@ -180,7 +181,8 @@ def process_cli_arguments(args):
 
     # Call the existing processing logic here
     # process_dam(dam_dict)
-    Dam(**dam_dict)
+    dam_i = Dam(**dam_dict)
+    dam_i.process_dam()
 
 
 def main():

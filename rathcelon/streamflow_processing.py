@@ -22,7 +22,7 @@ def get_nwm_rp(comids: list[int]):
               'output_format': 'csv',
               'order_by_comid': False,}
 
-    response = requests.get(rp_url, params=params, headers=header)
+    response = requests.get(rp_url, params=params, headers=header, timeout=60)
 
     if response.status_code == 200:
         return_period_df = pd.read_csv(io.StringIO(response.text))
