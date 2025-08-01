@@ -346,9 +346,11 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
         # Reorder columns so qout_median and qout_max come first
         cols = ["qout_median", "qout_max"] + [col for col in rp_df.columns if col.startswith("rp")]
         rp_df = rp_df[cols]
+        print(rp_df)
 
         # Map hydroseqs to river IDs
         map_df = pd.DataFrame({'hydroseq': hydroseqs, 'river_id': reach_ids})
+        print(map_df)
 
         # Merge and reshape
         final_df = map_df.merge(rp_df, on='river_id') \

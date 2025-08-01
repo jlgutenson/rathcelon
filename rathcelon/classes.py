@@ -562,7 +562,11 @@ class Dam:
             while remaining_distance_to_travel > 0:
                 # Get downstream edges from the current link
                 downstream_edges = list(G.out_edges(current_link, data=True))
+                print(G.out_edges(current_link))
                 if not downstream_edges:
+                    print(f"At failure, current_link = {current_link}")
+                    print(G.out_edges(current_link))
+
                     raise ValueError(
                         f"Not enough downstream stream length for cross-section {i} (link {current_link})."
                     )
@@ -623,15 +627,55 @@ class Dam:
             points_of_interest.append(downstream_point)
 
         # downstream_points now contains cross-sections spaced exactly tw meters apart along the stream.
-        # Compute lat/lon for curve data
-        (minx, miny, maxx, maxy, dx, dy, _, _, _, _) = get_raster_info(self.dem_tif)
+        (minx, miny, maxx, maxy, dx, dy, _, _, _, crs_str) = get_raster_info(self.dem_tif)
         cellsize_x, cellsize_y = abs(float(dx)), abs(float(dy))
-        lat_base, lon_base = float(maxy) - 0.5 * cellsize_y, float(minx) + 0.5 * cellsize_x
+        crs = CRS.from_user_input(crs_str)
 
-        curve_data_df['Lat'] = lat_base - curve_data_df['Row'] * cellsize_y
-        curve_data_df['Lon'] = lon_base + curve_data_df['Col'] * cellsize_x
-        vdt_df['Lat'] = lat_base - vdt_df['Row'] * cellsize_y
-        vdt_df['Lon'] = lon_base + vdt_df['Col'] * cellsize_x
+        # Compute upper-left cell center in raster coordinates
+        x_base = float(minx) + 0.5 * cellsize_x
+        y_base = float(maxy) - 0.5 * cellsize_y
+
+        # Compute all X/Ys in raster space (regardless of CRS)
+        curve_data_df['X'] = x_base + curve_data_df['Col'] * cellsize_x
+        curve_data_df['Y'] = y_base - curve_data_df['Row'] * cellsize_y
+
+        vdt_df['X'] = x_base + vdt_df['Col'] * cellsize_x
+        vdt_df['Y'] = y_base - vdt_df['Row'] * cellsize_y
+
+        # Open the cross-section file and read the end point lat and lons
+        XS_Out_File_df = pd.read_csv(self.xs_txt, sep='\t')
+
+        XS_Out_File_df['X1'] = x_base + XS_Out_File_df['c1'] * cellsize_x
+        XS_Out_File_df['Y1'] = y_base - XS_Out_File_df['r1'] * cellsize_y
+        XS_Out_File_df['X2'] = x_base + XS_Out_File_df['c2'] * cellsize_x
+        XS_Out_File_df['Y2'] = y_base - XS_Out_File_df['r2'] * cellsize_y
+
+        # Convert to Lat/Lon
+        if crs.is_geographic:
+            # CRS is already in lat/lon
+            curve_data_df['Lon'] = curve_data_df['X']
+            curve_data_df['Lat'] = curve_data_df['Y']
+            vdt_df['Lon'] = vdt_df['X']
+            vdt_df['Lat'] = vdt_df['Y']
+            XS_Out_File_df['Lon1'] = XS_Out_File_df['X1']
+            XS_Out_File_df['Lat1'] = XS_Out_File_df['Y1']
+            XS_Out_File_df['Lon2'] = XS_Out_File_df['X2']
+            XS_Out_File_df['Lat2'] = XS_Out_File_df['Y2']
+        else:
+            # Projected -> convert to WGS84
+            transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+            curve_data_df[['Lon', 'Lat']] = curve_data_df.apply(
+                lambda row_i: pd.Series(transformer.transform(row_i['X'], row_i['Y'])), axis=1)
+            vdt_df[['Lon', 'Lat']] = vdt_df.apply(lambda row_i: pd.Series(transformer.transform(row_i['X'], row_i['Y'])),
+                                                  axis=1)
+            XS_Out_File_df[['Lon1', 'Lat1']] = XS_Out_File_df.apply(
+                lambda row_i: pd.Series(transformer.transform(row_i['X1'], row_i['Y1'])), axis=1)
+            XS_Out_File_df[['Lon2', 'Lat2']] = XS_Out_File_df.apply(
+                lambda row_i: pd.Series(transformer.transform(row_i['X2'], row_i['Y2'])), axis=1)
+
+            x, y = XS_Out_File_df.loc[0, 'X1'], XS_Out_File_df.loc[0, 'Y1']
+            lon, lat = transformer.transform(x, y)
+            print(f"X1 = {x}, Y1 = {y} → Lon = {lon}, Lat = {lat}")
 
         self.curve_data_gdf = gpd.GeoDataFrame(curve_data_df, geometry=gpd.points_from_xy(curve_data_df['Lon'], curve_data_df['Lat']), crs="EPSG:4269")
         self.vdt_gdf = gpd.GeoDataFrame(vdt_df, geometry=gpd.points_from_xy(vdt_df['Lon'], vdt_df['Lat']), crs="EPSG:4269")
@@ -723,39 +767,49 @@ class Dam:
         self.vdt_gdf = pd.concat(vdt_gdfs)
         self.curve_data_gdf = pd.concat(curve_data_gdfs)
 
-        # Open the cross-section file and read the end point lat and lons
-        XS_Out_File_df = pd.read_csv(self.xs_txt, sep='\t')
 
-        XS_Out_File_df['Lat1'] = lat_base - XS_Out_File_df['r1'] * cellsize_y
-        XS_Out_File_df['Lon1'] = lon_base + XS_Out_File_df['c1'] * cellsize_x
-        XS_Out_File_df['Lat2'] = lat_base - XS_Out_File_df['r2'] * cellsize_y
-        XS_Out_File_df['Lon2'] = lon_base + XS_Out_File_df['c2'] * cellsize_x
 
-        curve_data_df['Lat'] = lat_base - curve_data_df['Row'] * cellsize_y
-        curve_data_df['Lon'] = lon_base + curve_data_df['Col'] * cellsize_x
-        vdt_df['Lat'] = lat_base - vdt_df['Row'] * cellsize_y
-        vdt_df['Lon'] = lon_base + vdt_df['Col'] * cellsize_x
+        # XS_Out_File_df['Lat1'] = lat_base - XS_Out_File_df['r1'] * cellsize_y
+        # XS_Out_File_df['Lon1'] = lon_base + XS_Out_File_df['c1'] * cellsize_x
+        # XS_Out_File_df['Lat2'] = lat_base - XS_Out_File_df['r2'] * cellsize_y
+        # XS_Out_File_df['Lon2'] = lon_base + XS_Out_File_df['c2'] * cellsize_x
+        #
+        # curve_data_df['Lat'] = lat_base - curve_data_df['Row'] * cellsize_y
+        # curve_data_df['Lon'] = lon_base + curve_data_df['Col'] * cellsize_x
+        # vdt_df['Lat'] = lat_base - vdt_df['Row'] * cellsize_y
+        # vdt_df['Lon'] = lon_base + vdt_df['Col'] * cellsize_x
 
         # filter the XS_Out_File_df to only include cross-sections with 'row' and 'col' combinations that match the curve_data_gdf
         # keep only rows whose (Row,Col) is in curve_data_gdf
         XS_Out_File_df = (XS_Out_File_df.merge(self.curve_data_gdf[['COMID','Row','Col']].drop_duplicates(),
                                                on=['COMID','Row','Col'], how='inner'))
 
-        # use lat lon pairs to create a line vector shapefile
-        xs_lines = []
-        for index, row in XS_Out_File_df.iterrows():
-            start_point = Point(row['Lon1'], row['Lat1'])
-            end_point = Point(row['Lon2'], row['Lat2'])
-            xs_lines.append(LineString([start_point, end_point]))
+        # # use lat lon pairs to create a line vector shapefile
+        # xs_lines = []
+        # for index, row in XS_Out_File_df.iterrows():
+        #     start_point = Point(row['Lon1'], row['Lat1'])
+        #     end_point = Point(row['Lon2'], row['Lat2'])
+        #     xs_lines.append(LineString([start_point, end_point]))
+        #
+        # # Create a GeoDataFrame from the lines, set the CRS to the same as the dem
+        # XS_Out_File_df['geometry'] = xs_lines
+        # # Build the CRS object as you already do
+        # crs = CRS.from_wkt(self.rast_proj)
+        # # Create the GeoDataFrame using all columns from XS_Out_File_df, including geometry
+        # self.xs_gdf = gpd.GeoDataFrame(XS_Out_File_df, geometry='geometry', crs=crs)
+        # # # convert the crs of the xs_gdf to match the vdt_gdf and curve_data_gdf
+        # self.xs_gdf = self.xs_gdf.to_crs(projected_crs)
+        # Step 1: Build geometry from lon/lat
+        xs_lines = [LineString([Point(row['Lon1'], row['Lat1']), Point(row['Lon2'], row['Lat2'])])
+                    for _, row in XS_Out_File_df.iterrows()]
 
-        # Create a GeoDataFrame from the lines, set the CRS to the same as the dem
         XS_Out_File_df['geometry'] = xs_lines
-        # Build the CRS object as you already do
-        crs = CRS.from_wkt(self.rast_proj)
-        # Create the GeoDataFrame using all columns from XS_Out_File_df, including geometry
-        self.xs_gdf = gpd.GeoDataFrame(XS_Out_File_df, geometry='geometry', crs=crs)
-        # # convert the crs of the xs_gdf to match the vdt_gdf and curve_data_gdf
-        self.xs_gdf = self.xs_gdf.to_crs(projected_crs)
+
+        # set crs to EPSG:4326 (WGS84) since we have lat lon not proj. coords
+        self.xs_gdf = gpd.GeoDataFrame(XS_Out_File_df, geometry='geometry', crs="EPSG:4326")
+
+        # then set the crs to match the dem proj.
+        self.xs_gdf = self.xs_gdf.to_crs(self.rast_proj)  # or to projected_crs if defined separately
 
 
     def _process_geospatial_data(self):
