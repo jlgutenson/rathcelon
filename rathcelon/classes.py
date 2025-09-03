@@ -101,7 +101,9 @@ def move_upstream(point, current_link, distance, G):
             # step to upstream link
             ups = list(G.in_edges(link))
             if not ups:
-                raise RuntimeError("Ran out of upstream network")
+                curr_pt = new_pt
+                return curr_pt, link
+                # raise RuntimeError("Ran out of upstream network")
             # pick first, or implement smarter selection
             link = ups[0][0]
         curr_pt = new_pt
@@ -433,7 +435,7 @@ class Dam:
         self.create_reach_average_curve_file = kwargs.get('create_reach_average_curve_file', False)
         self.known_baseflow = kwargs.get('known_baseflow', None)
         self.known_channel_forming_discharge = kwargs.get('known_channel_forming_discharge', None)
-        self.upstream_elevation_change_threshold = kwargs.get('upstream_elevation_change_threshold', 1.0)
+        self.upstream_elevation_change_threshold = 1.0 # kwargs.get('upstream_elevation_change_threshold', 0.1)
 
         # folder locations:
         self.arc_dir = None
@@ -718,12 +720,24 @@ class Dam:
 
         # sample initial BaseElev
         init_idx = self.curve_data_gdf.geometry.distance(current_point_geom).idxmin()
-        last_base_elev = self.curve_data_gdf.at[init_idx, 'BaseElev']
+        initial_base_elev = self.curve_data_gdf.at[init_idx, 'BaseElev']
 
+        # Collect upstream points and elevations for segmentation analysis
+        upstream_points = []
+        upstream_elevations = []
+        upstream_distances = []
+        upstream_links = []
+
+        max_distance = 2 * self.weir_length
         increment = 1
+
+        # Collect all upstream points up to max distance
         while True:
             # compute cumulative distance from the dam
             distance = self.avg_dist_upstream * increment
+            if distance >= max_distance:
+                break
+
             # always start from the original dam point/link
             current_point_geom, current_link = move_upstream(
                 origin_point_geom,
@@ -742,18 +756,97 @@ class Dam:
             idx = self.curve_data_gdf.geometry.distance(current_point_geom).idxmin()
             current_base_elev = self.curve_data_gdf.at[idx, 'BaseElev']
 
+            # store the point data
+            upstream_points.append(upstream_point)
+            upstream_elevations.append(current_base_elev)
+            upstream_distances.append(distance)
+            upstream_links.append(current_link)
 
-            # check elevation change
-            elev_diff = abs(current_base_elev - last_base_elev)
-            print(f'current_base_elev: {current_base_elev}')
-            if elev_diff >= self.upstream_elevation_change_threshold:
-                print(f"Reached threshold to find upstream cross-section:"
-                      f"distance = {distance:.3f} and Δ elevation = {elev_diff:.3f}")
-                break
-
-            # update for next iteration
-            last_base_elev = current_base_elev
             increment += 1
+
+        # Break into 10 segments and find the one with highest slope
+        if len(upstream_points) >= 10:
+            segment_size = max(2, len(upstream_points) // 10)  # Ensure at least 2 points per segment
+            max_slope = 0.0
+            best_segment_start_idx = 0
+
+            print(f"Breaking {len(upstream_points)} upstream points into segments of size {segment_size}")
+
+            # Calculate slope for each segment
+            for i in range(0, len(upstream_points) - segment_size + 1, segment_size):
+                end_idx = min(i + segment_size - 1, len(upstream_points) - 1)
+
+                if end_idx <= i:
+                    continue
+
+                # Calculate slope for this segment
+                elev_start = upstream_elevations[i]
+                elev_end = upstream_elevations[end_idx]
+                dist_start = upstream_distances[i]
+                dist_end = upstream_distances[end_idx]
+
+                distance_diff = dist_end - dist_start
+                elevation_diff = abs(elev_end - elev_start)
+
+                if distance_diff > 0:
+                    segment_slope = elevation_diff / distance_diff
+                    print(
+                        f"Segment {i // segment_size + 1}: slope = {segment_slope:.6f} (elev diff: {elevation_diff:.3f}m, dist diff: {distance_diff:.3f}m)")
+
+                    if segment_slope > max_slope:
+                        max_slope = segment_slope
+                        best_segment_start_idx = i  # Save the start of the highest slope segment
+
+            # Use the point upstream of the segment with highest slope
+            if max_slope > 0:
+                if best_segment_start_idx > 0:
+                    # Use the point upstream (before) the highest slope segment
+                    upstream_idx = best_segment_start_idx - 1
+                    upstream_point = upstream_points[upstream_idx]
+                    current_link = upstream_links[upstream_idx]
+                    final_distance = upstream_distances[upstream_idx]
+                    print(
+                        f"Selected upstream point before segment with highest slope: {max_slope:.6f} at distance {final_distance:.3f}m")
+                else:
+                    # If the highest slope segment is the first one, use the start of that segment
+                    upstream_point = upstream_points[best_segment_start_idx]
+                    current_link = upstream_links[best_segment_start_idx]
+                    final_distance = upstream_distances[best_segment_start_idx]
+                    print(
+                        f"Highest slope segment is first segment, using start point at distance {final_distance:.3f}m")
+            else:
+                # Fallback to midpoint if no slope found
+                mid_idx = len(upstream_points) // 2
+                upstream_point = upstream_points[mid_idx]
+                current_link = upstream_links[mid_idx]
+                print("No significant slope found, using midpoint of upstream reach")
+
+        elif len(upstream_points) > 0:
+            # If we have fewer than 10 points, use the original logic as fallback
+            print(f"Only {len(upstream_points)} upstream points found, using elevation change threshold fallback")
+
+            last_base_elev = initial_base_elev
+            for i, (point, elev, dist, link) in enumerate(
+                    zip(upstream_points, upstream_elevations, upstream_distances, upstream_links)):
+                elev_diff = abs(elev - last_base_elev)
+
+                if elev_diff >= self.upstream_elevation_change_threshold:
+                    upstream_point = point
+                    current_link = link
+                    print(f"Found elevation change of {elev_diff:.3f}m at distance {dist:.3f}m")
+                    break
+                last_base_elev = elev
+            else:
+                # If no elevation change found, use the farthest point
+                upstream_point = upstream_points[-1]
+                current_link = upstream_links[-1]
+                print("No elevation change threshold met, using farthest upstream point")
+
+        else:
+            # No upstream points found - this shouldn't happen but handle gracefully
+            print("Warning: No upstream points found, keeping dam location")
+            upstream_point = origin_point_geom
+            current_link = origin_link
 
         # record the upstream that matches the elevation change threshold we were looking for
         dam_ids.append(self.dam_id)
@@ -788,8 +881,6 @@ class Dam:
         # combine the VDT gdfs and curve data gdfs into one a piece
         self.vdt_gdf = pd.concat(vdt_gdfs)
         self.curve_data_gdf = pd.concat(curve_data_gdfs)
-
-
 
         # XS_Out_File_df['Lat1'] = lat_base - XS_Out_File_df['r1'] * cellsize_y
         # XS_Out_File_df['Lon1'] = lon_base + XS_Out_File_df['c1'] * cellsize_x
@@ -1054,7 +1145,8 @@ class Dam:
 
         # Now go through each DEM dataset
         for DEM in DEM_List:
-            self._assess_dam(DEM)
+            if DEM.endswith('.tif'):
+                self._assess_dam(DEM)
 
         # delete the ESA_LC_Folder and the data in it
         # Loop through all files in the directory and remove them

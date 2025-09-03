@@ -183,8 +183,8 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     current_downstream_rivid = downstream_rivid
 
     # Loop to find up to 2 downstream segments. lol
-    print('Process_and_Write_Retrospective_Data_for_Dam: Loop to find up to 3 downstream segments.')
-    for i in range(4):
+    print('Process_and_Write_Retrospective_Data_for_Dam: Loop to find up to ... downstream segments.')
+    for i in range(8):
         # Find the stream segment whose LINKNO matches the current downstream rivid.
         segment = dam.flowline_gdf[dam.flowline_gdf[dam.rivid_field] == current_downstream_rivid]
         
