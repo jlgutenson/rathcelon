@@ -273,22 +273,68 @@ def clean_strm_raster(strm_tif: str, clean_strm_tif: str) -> None:
     write_output_raster(clean_strm_tif, B[1:nrows + 1, 1:ncols + 1], dem_geotransform, dem_projection)
 
 
-def write_output_raster(s_output_filename: str, raster_data, dem_geotransform, dem_projection, s_file_format='GTiff'):
+# def write_output_raster(s_output_filename: str, raster_data, dem_geotransform, dem_projection, s_file_format='GTiff'):
 
-    # Construct the file with the appropriate data shape
-    s_output_type = gdal_array.NumericTypeCodeToGDALTypeCode(raster_data.dtype)
+#     # Construct the file with the appropriate data shape
+#     s_output_type = gdal_array.NumericTypeCodeToGDALTypeCode(raster_data.dtype)
+#     n_rows, n_cols = raster_data.shape
+#     with gdal.GetDriverByName(s_file_format).Create(s_output_filename, xsize=n_cols, ysize=n_rows,
+#                                                     bands=1, eType=s_output_type) as dst:
+#         # Set the geotransform
+#         dst.SetGeoTransform(dem_geotransform)
+
+#         # Set the spatial reference
+#         dst.SetProjection(dem_projection)
+
+#         # Write the data to the file
+#         dst.GetRasterBand(1).WriteArray(raster_data)
+
+def write_output_raster(
+    s_output_filename: str,
+    raster_data,
+    dem_geotransform,
+    dem_projection,
+    *,
+    s_file_format: str = "GTiff",
+    nodata=None,
+    creation_options=("TILED=YES", "COMPRESS=LZW")
+):
+    # Map numpy dtype -> GDAL type
+    gdal_dtype = gdal_array.NumericTypeCodeToGDALTypeCode(raster_data.dtype)
+    if gdal_dtype is None:
+        # Default to Float32 if GDAL can't infer it (e.g., object dtype)
+        raster_data = np.asarray(raster_data, dtype=np.float32)
+        gdal_dtype = gdal.GDT_Float32
+
     n_rows, n_cols = raster_data.shape
-    with gdal.GetDriverByName(s_file_format).Create(s_output_filename, xsize=n_cols, ysize=n_rows,
-                                                    bands=1, eType=s_output_type) as dst:
-        # Set the geotransform
-        dst.SetGeoTransform(dem_geotransform)
+    driver = gdal.GetDriverByName(s_file_format)
+    if driver is None:
+        raise RuntimeError(f"GDAL driver not found: {s_file_format}")
 
-        # Set the spatial reference
-        dst.SetProjection(dem_projection)
+    ds = driver.Create(
+        s_output_filename,
+        xsize=n_cols,
+        ysize=n_rows,
+        bands=1,
+        eType=gdal_dtype,
+        options=list(creation_options) if creation_options else None
+    )
+    if ds is None:
+        raise RuntimeError(f"Failed to create dataset: {s_output_filename}")
 
-        # Write the data to the file
-        dst.GetRasterBand(1).WriteArray(raster_data)
+    try:
+        ds.SetGeoTransform(dem_geotransform)
+        ds.SetProjection(dem_projection)
 
+        band = ds.GetRasterBand(1)
+        if nodata is not None:
+            band.SetNoDataValue(nodata)
+
+        band.WriteArray(raster_data)
+        band.FlushCache()
+    finally:
+        band = None
+        ds = None
 
 def update_crs(dem_tif: str, lc_tif: str) -> str:
     # Load the projection of the DEM file
@@ -319,6 +365,10 @@ def update_crs(dem_tif: str, lc_tif: str) -> str:
 def create_arc_strm_raster(StrmSHP: str, output_raster_path: str, DEM_File: str, value_field: str):
     # Load the shapefile
     gdf = gpd.read_file(StrmSHP)
+
+    # if values are bigger than 32 bit intergers, subtract 5000000000000 from the value_field
+    if gdf[value_field].max() > 2147483647:
+        gdf[value_field] = gdf[value_field] - 5000000000000
 
     # Load the reference raster to get transform, shape, and CRS
     with rasterio.open(DEM_File) as ref:
@@ -954,8 +1004,14 @@ class Dam:
                 self.rivid_field = 'LINKNO'
             else:
                 self.rivid_field = 'hydroseq'
+                # subtract 5000000000000 from the rivid_field in the dam_gdf
+                self.dam_gdf[self.rivid_field] = self.dam_gdf[self.rivid_field] - 5000000000000
+                # subtract 5000000000000 from the dnhydroseq field in the dam_gdf if it exists
+                if 'dnhydroseq' in self.dam_gdf.columns:
+                    self.dam_gdf['dnhydroseq'] = self.dam_gdf['dnhydroseq'] - 5000000000000
 
             self.rivids = self.dam_gdf[self.rivid_field].values
+
             print(self.rivids)
 
         elif self.flowline_gdf is not None and os.path.isfile(self.dam_shp) is False and os.path.isfile(
@@ -1128,6 +1184,16 @@ class Dam:
                 layer_name = None
 
             self.flowline_gdf = gpd.read_file(self.flowline, layer=layer_name, engine='fiona', bbox=bbox_geom)
+
+            # if the river id field has values greater than 32-bit int, subtract 5000000000000 from it
+            if 'hydroseq' in self.flowline_gdf.columns:
+                if self.flowline_gdf['hydroseq'].max() > 2147483647:
+                    self.flowline_gdf['hydroseq'] = self.flowline_gdf['hydroseq'] - 5000000000000
+                    # do the same for dnhydroseq if it exists
+                    if 'dnhydroseq' in self.flowline_gdf.columns:
+                        self.flowline_gdf['dnhydroseq'] = self.flowline_gdf['dnhydroseq'] - 5000000000000
+                    print('Adjusted hydroseq values by subtracting 5000000000000 to fit within 32-bit integer range.')
+
 
             print(f'Filtered stream features: {len(self.flowline_gdf)} (vs reading entire file)')
 

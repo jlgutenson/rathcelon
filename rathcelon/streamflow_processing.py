@@ -3,6 +3,7 @@
 
 # third-party imports
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 from shapely.geometry import Point
 import s3fs
@@ -215,9 +216,13 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     StrmShp_filtered_gdf.to_file(dam.dam_shp)
     StrmShp_filtered_gdf[dam.rivid_field] = StrmShp_filtered_gdf[dam.rivid_field].astype(int)
 
+
+
     # create a list of river IDs to throw to AWS
     # rivids_str = StrmShp_filtered_gdf[rivid_field].astype(str).to_list()
     rivids_int = StrmShp_filtered_gdf[dam.rivid_field].astype(int).to_list()
+
+    print(f'Rivids for dam {dam.rivid_field}: {rivids_int}')
 
     if dam.rivid_field == 'LINKNO':
         # Set up the S3 connection

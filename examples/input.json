@@ -1,48 +1,18 @@
 {
     "dams": [
         {
-            "name": "152",
+            "name": "350",
             "dam_csv":"C:/Users/jlgut/OneDrive/Desktop/rathcelon/examples/LHD_lat_long.csv",
             "dam_id_field": "BYU_SITE_ID",
-            "dam_id": 152,
-            "flowline": "C:/Users/jlgut/Downloads/streams_712.gpkg",
-            "dem_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/DEM_3",
+            "dam_id": 350,
+            "flowline": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/NHD_Streams/NHDPLUS_H_0104_HU4_20230713_GPKG_VAA.gpkg",
+            "dem_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/DEM_350",
             "bathy_use_banks": false,
             "output_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/Results",
             "process_stream_network": true,
             "find_banks_based_on_landcover": true,
             "create_reach_average_curve_file": false,
             "known_baseflow": 5.0,
-            "upstream_elevation_change_threshold": 0.1
-        },
-        {
-            "name": "114",
-            "dam_csv":"C:/Users/jlgut/OneDrive/Desktop/rathcelon/examples/LHD_lat_long.csv",
-            "dam_id_field": "BYU_SITE_ID",
-            "dam_id": 114,
-            "flowline": "C:/Users/jlgut/Downloads/streams_712.gpkg",
-            "dem_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/DEM_2",
-            "bathy_use_banks": false,
-            "output_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/Results",
-            "process_stream_network": true,
-            "find_banks_based_on_landcover": true,
-            "create_reach_average_curve_file": false,
-            "known_baseflow": 100,
-            "upstream_elevation_change_threshold": 0.1
-        },
-        {
-            "name": "272",
-            "dam_csv":"C:/Users/jlgut/OneDrive/Desktop/rathcelon/examples/LHD_lat_long.csv",
-            "dam_id_field": "BYU_SITE_ID",
-            "dam_id": 272,
-            "flowline": "C:/Users/jlgut/Downloads/streams_712.gpkg",
-            "dem_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/DEM",
-            "bathy_use_banks": false,
-            "output_dir": "C:/Users/jlgut/OneDrive/Desktop/rathcelon_test_data/Results",
-            "process_stream_network": true,
-            "find_banks_based_on_landcover": true,
-            "create_reach_average_curve_file": false,
-            "known_baseflow": 10,
             "upstream_elevation_change_threshold": 0.1
         }
     ]
