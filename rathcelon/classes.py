@@ -390,10 +390,10 @@ def create_arc_strm_raster(StrmSHP: str, output_raster_path: str, DEM_File: str,
               for geom, value in zip(gdf.geometry, gdf[value_field])]
 
     # Rasterize
-    raster = rasterize(shapes=shapes, out_shape=out_shape, fill=0, transform=ref_transform, dtype='int64')
+    raster = rasterize(shapes=shapes, out_shape=out_shape, fill=0, transform=ref_transform, dtype='int32')
 
     # Update metadata
-    meta.update({"driver": "GTiff", "dtype": "int64", "count": 1, "compress": "lzw", "nodata": 0})
+    meta.update({"driver": "GTiff", "dtype": "int32", "count": 1, "compress": "lzw", "nodata": 0})
 
     # Write to file
     with rasterio.open(output_raster_path, 'w', **meta) as dst:
@@ -737,11 +737,19 @@ class Dam:
             XS_Out_File_df['Lat2'] = XS_Out_File_df['Y2']
         else:
             # Projected -> convert to WGS84
+            print("hey_1")
             transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
+            print("vdt_df shape:", vdt_df.shape)
+            print(vdt_df.head())
+
+            print(transformer.transform(vdt_df.iloc[0]['X'], vdt_df.iloc[0]['Y']))
+            print('hey')
             curve_data_df[['Lon', 'Lat']] = curve_data_df.apply(
                 lambda row_i: pd.Series(transformer.transform(row_i['X'], row_i['Y'])), axis=1)
-            vdt_df[['Lon', 'Lat']] = vdt_df.apply(lambda row_i: pd.Series(transformer.transform(row_i['X'], row_i['Y'])),
-                                                  axis=1)
+            vdt_df[['Lon', 'Lat']] = vdt_df.apply(
+                lambda row_i: pd.Series(transformer.transform(row_i['X'], row_i['Y'])),
+                axis=1
+            )
             XS_Out_File_df[['Lon1', 'Lat1']] = XS_Out_File_df.apply(
                 lambda row_i: pd.Series(transformer.transform(row_i['X1'], row_i['Y1'])), axis=1)
             XS_Out_File_df[['Lon2', 'Lat2']] = XS_Out_File_df.apply(
@@ -753,7 +761,7 @@ class Dam:
 
         self.curve_data_gdf = gpd.GeoDataFrame(curve_data_df, geometry=gpd.points_from_xy(curve_data_df['Lon'], curve_data_df['Lat']), crs="EPSG:4269")
         self.vdt_gdf = gpd.GeoDataFrame(vdt_df, geometry=gpd.points_from_xy(vdt_df['Lon'], vdt_df['Lat']), crs="EPSG:4269")
-        self.curve_data_gdf.to_file('./test.gpkg')
+        # self.curve_data_gdf.to_file('./test.gpkg')
 
         # Convert all to projected CRS
         self.curve_data_gdf, self.vdt_gdf = (gdf.to_crs(projected_crs) for gdf in [self.curve_data_gdf, self.vdt_gdf])

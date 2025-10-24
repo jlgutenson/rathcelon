@@ -41,6 +41,8 @@ def Download_ESA_WorldLandCover(output_dir, geom, year=2021):
                2021: 'v200'}[year]
     
     lc_list = []
+    # just open with gdal
+    # gdal warp to change output bounds.
     for tile in tqdm(tiles.ll_tile):
         url = f"{s3_url_prefix}/{version}/{year}/map/ESA_WorldCover_10m_{year}_{version}_{tile}_Map.tif"
         r = requests.get(url, allow_redirects=True)
