@@ -1,29 +1,29 @@
 # build-in imports
-import os       # working with the operating system
-import sys      # working with the interpreter
+import os  # working with the operating system
+import sys  # working with the interpreter
 
 # third-party imports
-from arc import Arc     # automated rating curve generator (arc)
+from arc import Arc  # automated rating curve generator (arc)
 
 try:
-    import gdal                         # geospatial data abstraction library (gdal)
+    import gdal  # geospatial data abstraction library (gdal)
     import gdal_array
 except ImportError:
-    from osgeo import gdal, ogr, osr, gdal_array    # import from osgeo if direct import doesn't work
+    from osgeo import gdal, ogr, osr, gdal_array  # import from osgeo if direct import doesn't work
 
-import stat         # interpreting file status
-import fiona        # reading/writing vector spatial data
-import platform     # access information about system
-import rasterio     # raster data access/manipulation
-import numpy as np      # numerical + py = numpy
-import pandas as pd     # tabular data manipulation
-import networkx as nx       # network/graph analysis
-import geopandas as gpd     # geospatial + pandas = geopandas
-from pathlib import Path    # OOP - programming + filesystem paths
-from shapely.geometry import box, shape     # geometric shapes + manipulation
-from pyproj import CRS, Geod, Transformer   # CRS and transformations
-from shapely.geometry import Point, LineString, MultiLineString# , shape, mapping
-from shapely.ops import nearest_points, linemerge, transform #, split
+import stat  # interpreting file status
+import fiona  # reading/writing vector spatial data
+import platform  # access information about system
+import rasterio  # raster data access/manipulation
+import numpy as np  # numerical + py = numpy
+import pandas as pd  # tabular data manipulation
+import networkx as nx  # network/graph analysis
+import geopandas as gpd  # geospatial + pandas = geopandas
+from pathlib import Path  # OOP - programming + filesystem paths
+from shapely.geometry import box, shape  # geometric shapes + manipulation
+from pyproj import CRS, Geod, Transformer  # CRS and transformations
+from shapely.geometry import Point, LineString, MultiLineString  # , shape, mapping
+from shapely.ops import nearest_points, linemerge, transform  # , split
 from rasterio.features import rasterize
 
 # local imports
@@ -33,7 +33,7 @@ from . import esa_download_processing as esa
 def get_raster_info(dem_tif: str):
     print(dem_tif)
     with rasterio.open(dem_tif) as dataset:
-        geoTransform = dataset.transform # affine transform
+        geoTransform = dataset.transform  # affine transform
         ncols = dataset.width
         nrows = dataset.height
         minx = geoTransform.c
@@ -42,10 +42,9 @@ def get_raster_info(dem_tif: str):
         dy = geoTransform.e
         maxx = minx + dx * ncols
         miny = maxy + dy * nrows
-        Rast_Projection = dataset.crs.to_wkt() # wkt format
+        Rast_Projection = dataset.crs.to_wkt()  # wkt format
 
     return minx, miny, maxx, maxy, dx, dy, ncols, nrows, geoTransform, Rast_Projection
-
 
 
 def move_upstream(point, current_link, distance, G):
@@ -157,9 +156,9 @@ def read_raster_w_gdal(input_raster: str):
     band = dataset.GetRasterBand(1)
     raster_array = band.ReadAsArray()
 
-    #global ncols, nrows, cellsize, yll, yur, xll, xur
-    ncols=dataset.RasterXSize
-    nrows=dataset.RasterYSize
+    # global ncols, nrows, cellsize, yll, yur, xll, xur
+    ncols = dataset.RasterXSize
+    nrows = dataset.RasterYSize
 
     cellsize = geotransform[1]
     yll = geotransform[3] - nrows * abs(geotransform[5])
@@ -186,10 +185,9 @@ def read_raster_w_gdal(input_raster: str):
     return raster_array, ncols, nrows, cellsize, yll, yur, xll, xur, lat, geotransform, raster_proj
 
 
-
 def clean_strm_raster(strm_tif: str, clean_strm_tif: str) -> None:
     print('\nCleaning up the Stream File.')
-    (SN, ncols, nrows, cellsize, yll, yur, xll, xur, lat, dem_geotransform, dem_projection)\
+    (SN, ncols, nrows, cellsize, yll, yur, xll, xur, lat, dem_geotransform, dem_projection) \
         = read_raster_w_gdal(strm_tif)
 
     # Create an array that is slightly larger than the STRM Raster Array
@@ -290,14 +288,14 @@ def clean_strm_raster(strm_tif: str, clean_strm_tif: str) -> None:
 #         dst.GetRasterBand(1).WriteArray(raster_data)
 
 def write_output_raster(
-    s_output_filename: str,
-    raster_data,
-    dem_geotransform,
-    dem_projection,
-    *,
-    s_file_format: str = "GTiff",
-    nodata=None,
-    creation_options=("TILED=YES", "COMPRESS=LZW")
+        s_output_filename: str,
+        raster_data,
+        dem_geotransform,
+        dem_projection,
+        *,
+        s_file_format: str = "GTiff",
+        nodata=None,
+        creation_options=("TILED=YES", "COMPRESS=LZW")
 ):
     # Map numpy dtype -> GDAL type
     gdal_dtype = gdal_array.NumericTypeCodeToGDALTypeCode(raster_data.dtype)
@@ -336,6 +334,7 @@ def write_output_raster(
         band = None
         ds = None
 
+
 def update_crs(dem_tif: str, lc_tif: str) -> str:
     # Load the projection of the DEM file
     with rasterio.open(dem_tif) as src:
@@ -365,6 +364,11 @@ def update_crs(dem_tif: str, lc_tif: str) -> str:
 def create_arc_strm_raster(StrmSHP: str, output_raster_path: str, DEM_File: str, value_field: str):
     # Load the shapefile
     gdf = gpd.read_file(StrmSHP)
+
+    # Check if value_field is valid
+    if value_field is None or value_field not in gdf.columns:
+        raise ValueError(
+            f"Invalid value_field: '{value_field}'. Not found in shapefile columns: {gdf.columns.to_list()}")
 
     # if values are bigger than 32 bit intergers, subtract 5000000000000 from the value_field
     if gdf[value_field].max() > 2147483647:
@@ -426,7 +430,7 @@ def create_arc_lc_raster(lc_tif: str, land_tif: str, projWin_extents, ncols: int
 
     """
     ds = gdal.Open(lc_tif)
-    gdal.Translate(land_tif, ds, projWin = projWin_extents, width=ncols, height = nrows)
+    gdal.Translate(land_tif, ds, projWin=projWin_extents, width=ncols, height=nrows)
     del ds
 
 
@@ -485,7 +489,13 @@ class Dam:
         self.create_reach_average_curve_file = kwargs.get('create_reach_average_curve_file', False)
         self.known_baseflow = kwargs.get('known_baseflow', None)
         self.known_channel_forming_discharge = kwargs.get('known_channel_forming_discharge', None)
-        self.upstream_elevation_change_threshold = 1.0 # kwargs.get('upstream_elevation_change_threshold', 0.1)
+        self.upstream_elevation_change_threshold = 1.0  # kwargs.get('upstream_elevation_change_threshold', 0.1)
+
+        # New parameter for local parquet file
+        self.flow_parquet_file = kwargs.get('flow_parquet_file', None)
+
+        # internal attributes
+        self.rivid_field = None  # Will be set in process_dam
 
         # folder locations:
         self.arc_dir = None
@@ -499,7 +509,6 @@ class Dam:
         self.manning = None
 
         self.flowline_gdf = None
-
 
     def _create_arc_input_txt(self, comid, Q_baseflow, Q_max):
 
@@ -540,7 +549,6 @@ class Dam:
             out_file.write(f'BATHY_Out_File\t{self.bathy_tif}\n')
             out_file.write(f'XS_Out_File\t{self.xs_txt}\n')
 
-
     def _find_strm_up_downstream(self, n_cross_sections=4):
 
         # Read the VDT and Curve data into DataFrames
@@ -553,10 +561,15 @@ class Dam:
         # Merge flow parameters
         merged_df = pd.merge(curve_data_df, dam_reanalysis_df, on='COMID', how='left')
         if self.known_baseflow is None:
-            merged_df['tw_rp2'] = merged_df['tw_a'] * (merged_df['rp2'] ** merged_df['tw_b'])
+            # Check if 'rp2' exists, if not, fallback or error
+            if 'rp2' not in merged_df.columns:
+                print("Warning: 'rp2' column not found in reanalysis data. Cannot calculate 'tw_rp2'.")
+                # As a fallback, maybe set to a default or skip, here I'll skip calculation
+                merged_df['tw_rp2'] = np.nan
+            else:
+                merged_df['tw_rp2'] = merged_df['tw_a'] * (merged_df['rp2'] ** merged_df['tw_b'])
         else:
             merged_df['tw_known_baseflow'] = merged_df['tw_a'] * (self.known_baseflow ** merged_df['tw_b'])
-
 
         # Read stream shapefile and dam locations
         dam_flowline_gdf = gpd.read_file(self.dam_shp, engine='fiona')
@@ -580,11 +593,11 @@ class Dam:
         # **1. Build a Directed Graph Using LINKNO and DSLINKNO**
         G = nx.DiGraph()
 
-        if 'LINKNO' in dam_flowline_gdf.columns:
-            rivid_field = 'LINKNO'
+        # Use the rivid_field already set in the class
+        rivid_field = self.rivid_field
+        if rivid_field == 'LINKNO':
             ds_rivid_field = 'DSLINKNO'
         else:
-            rivid_field = 'hydroseq'
             ds_rivid_field = 'dnhydroseq'
 
         for _, row in dam_flowline_gdf.iterrows():
@@ -759,8 +772,11 @@ class Dam:
             lon, lat = transformer.transform(x, y)
             print(f"X1 = {x}, Y1 = {y} → Lon = {lon}, Lat = {lat}")
 
-        self.curve_data_gdf = gpd.GeoDataFrame(curve_data_df, geometry=gpd.points_from_xy(curve_data_df['Lon'], curve_data_df['Lat']), crs="EPSG:4269")
-        self.vdt_gdf = gpd.GeoDataFrame(vdt_df, geometry=gpd.points_from_xy(vdt_df['Lon'], vdt_df['Lat']), crs="EPSG:4269")
+        self.curve_data_gdf = gpd.GeoDataFrame(curve_data_df,
+                                               geometry=gpd.points_from_xy(curve_data_df['Lon'], curve_data_df['Lat']),
+                                               crs="EPSG:4269")
+        self.vdt_gdf = gpd.GeoDataFrame(vdt_df, geometry=gpd.points_from_xy(vdt_df['Lon'], vdt_df['Lat']),
+                                        crs="EPSG:4269")
         # self.curve_data_gdf.to_file('./test.gpkg')
 
         # Convert all to projected CRS
@@ -771,10 +787,9 @@ class Dam:
         current_point_geom = nearest_points(closest_stream.geometry, dam_point)[0]
         current_link = start_link
 
-
         # store dam origin so we can always measure from it
         origin_point_geom = current_point_geom
-        origin_link       = current_link
+        origin_link = current_link
 
         # sample initial BaseElev
         init_idx = self.curve_data_gdf.geometry.distance(current_point_geom).idxmin()
@@ -855,16 +870,23 @@ class Dam:
                         max_slope = segment_slope
                         best_segment_start_idx = i  # Save the start of the highest slope segment
 
-            # Use the point at the END of the segment with highest slope
+            # Use the point upstream of the segment with highest slope
             if max_slope > 0:
-                # Calculate the index for the end of the best segment
-                upstream_idx = min(best_segment_start_idx + segment_size + 1, len(upstream_points) + 1)
-
-                upstream_point = upstream_points[upstream_idx]
-                current_link = upstream_links[upstream_idx]
-                final_distance = upstream_distances[upstream_idx]
-                print(
-                    f"Selected upstream point at end of segment with highest slope: {max_slope:.6f} at distance {final_distance:.3f}m")
+                if best_segment_start_idx > 0:
+                    # Use the point upstream (before) the highest slope segment
+                    upstream_idx = best_segment_start_idx - 1
+                    upstream_point = upstream_points[upstream_idx]
+                    current_link = upstream_links[upstream_idx]
+                    final_distance = upstream_distances[upstream_idx]
+                    print(
+                        f"Selected upstream point before segment with highest slope: {max_slope:.6f} at distance {final_distance:.3f}m")
+                else:
+                    # If the highest slope segment is the first one, use the start of that segment
+                    upstream_point = upstream_points[best_segment_start_idx]
+                    current_link = upstream_links[best_segment_start_idx]
+                    final_distance = upstream_distances[best_segment_start_idx]
+                    print(
+                        f"Highest slope segment is first segment, using start point at distance {final_distance:.3f}m")
             else:
                 # Fallback to midpoint if no slope found
                 mid_idx = len(upstream_points) // 2
@@ -905,9 +927,9 @@ class Dam:
         points_of_interest.append(upstream_point)
 
         # **Save the Downstream Points as a Shapefile**
-        self.downstream_gdf = gpd.GeoDataFrame(data={'dam_id': dam_ids, rivid_field: link_nos, 'geometry': points_of_interest},
-                                          crs=projected_crs)
-
+        self.downstream_gdf = gpd.GeoDataFrame(
+            data={'dam_id': dam_ids, rivid_field: link_nos, 'geometry': points_of_interest},
+            crs=projected_crs)
 
         # **4. Find Nearest VDT and Curve Data Points to the points of interest**
         vdt_gdfs = []
@@ -916,15 +938,15 @@ class Dam:
         for pt in self.downstream_gdf.geometry:
             # compute distances
             dists_curve = self.curve_data_gdf.geometry.distance(pt)
-            dists_vdt   = self.vdt_gdf.geometry.distance(pt)
+            dists_vdt = self.vdt_gdf.geometry.distance(pt)
 
             # grab the *index* of the nearest cell
             idx_curve = dists_curve.idxmin()
-            idx_vdt   = dists_vdt.idxmin()
+            idx_vdt = dists_vdt.idxmin()
 
             # select exactly that one row
             nearest_curves = self.curve_data_gdf.loc[[idx_curve]]
-            nearest_vdt    = self.vdt_gdf.loc[[idx_vdt]]
+            nearest_vdt = self.vdt_gdf.loc[[idx_vdt]]
 
             curve_data_gdfs.append(nearest_curves)
             vdt_gdfs.append(nearest_vdt)
@@ -945,8 +967,8 @@ class Dam:
 
         # filter the XS_Out_File_df to only include cross-sections with 'row' and 'col' combinations that match the curve_data_gdf
         # keep only rows whose (Row,Col) is in curve_data_gdf
-        XS_Out_File_df = (XS_Out_File_df.merge(self.curve_data_gdf[['COMID','Row','Col']].drop_duplicates(),
-                                               on=['COMID','Row','Col'], how='inner'))
+        XS_Out_File_df = (XS_Out_File_df.merge(self.curve_data_gdf[['COMID', 'Row', 'Col']].drop_duplicates(),
+                                               on=['COMID', 'Row', 'Col'], how='inner'))
 
         # # use lat lon pairs to create a line vector shapefile
         # xs_lines = []
@@ -970,21 +992,21 @@ class Dam:
         XS_Out_File_df['geometry'] = xs_lines
 
         # set crs to EPSG:4326 (WGS84) since we have lat lon not proj. coords
-        self.xs_gdf = gpd.GeoDataFrame(XS_Out_File_df, geometry='geometry', crs="EPSG:4326")
+        self.xs_gdf = gpd.GeoDataFrame(XS_Out_File_df, geometry='geometry', crs="EPSG:4269")
 
         # then set the crs to match the dem proj.
         self.xs_gdf = self.xs_gdf.to_crs(self.rast_proj)  # or to projected_crs if defined separately
 
-
     def _process_geospatial_data(self):
 
         # Get the Spatial Information from the DEM Raster
-        (minx, miny, maxx, maxy, dx, dy, ncols, nrows, dem_geoTransform, dem_projection)\
+        (minx, miny, maxx, maxy, dx, dy, ncols, nrows, dem_geoTransform, dem_projection) \
             = get_raster_info(self.dem_tif)
 
         projWin_extents = [minx, maxy, maxx, miny]
         # outputBounds = [minx, miny, maxx, maxy]  #https://gdal.org/api/python/osgeo.gdal.html
-        self.rivid_field = None
+
+        # self.rivid_field = None # This is now set in process_dam
 
         # Create Land Dataset
         if os.path.isfile(self.land_tif):
@@ -1001,10 +1023,13 @@ class Dam:
                   f'{self.reanalysis_csv} Already Exists')
             self.dam_gdf = gpd.read_file(self.dam_shp)
 
+            # Ensure rivid_field is set correctly, even if files already exist
             if 'LINKNO' in self.dam_gdf.columns:
                 self.rivid_field = 'LINKNO'
             else:
                 self.rivid_field = 'hydroseq'
+
+            if self.rivid_field == 'hydroseq':
                 # subtract 5000000000000 from the rivid_field in the dam_gdf
                 self.dam_gdf[self.rivid_field] = self.dam_gdf[self.rivid_field] - 5000000000000
                 # subtract 5000000000000 from the dnhydroseq field in the dam_gdf if it exists
@@ -1013,17 +1038,20 @@ class Dam:
 
             self.rivids = self.dam_gdf[self.rivid_field].values
 
+            print(f"Using existing files. Set rivid_field to: {self.rivid_field}")
             print(self.rivids)
 
         elif self.flowline_gdf is not None and os.path.isfile(self.dam_shp) is False and os.path.isfile(
                 self.reanalysis_csv) is False:
-            if 'LINKNO' in self.flowline_gdf.columns:
-                self.rivid_field = 'LINKNO'
-            else:
-                self.rivid_field = 'hydroseq'
+
+            # This block now correctly uses self.rivid_field which was set in process_dam
             print('Running Function: Process_and_Write_Retrospective_Data_for_Dam')
             from . import streamflow_processing
             streamflow_processing.Process_and_Write_Retrospective_Data_for_Dam(self)
+
+        elif self.flowline_gdf is None:
+            raise ValueError("process_stream_network is False, but dam shapefile and flow file do not exist. "
+                             "Please set process_stream_network to True or provide existing files.")
 
         # Create Stream Raster
         if os.path.isfile(self.strm_tif):
@@ -1083,7 +1111,6 @@ class Dam:
 
         self._create_arc_input_txt("COMID", Q_bf_param, 'rp2')
 
-
     def process_dam(self):
         # Folder Management
         self.arc_dir = os.path.join(self.output_dir, f'{self.name}', 'ARC_InputFiles')
@@ -1108,12 +1135,22 @@ class Dam:
         print(f'Creating Manning n file: {self.manning}')
         create_mannings_esa(self.manning)
 
+        # --- FIXED ---
+        # Determine rivid_field based on flowline file name
+        # This needs to be set regardless of whether process_stream_network is True or False
+        if 'NHD' in self.flowline.name:
+            self.rivid_field = 'hydroseq'
+        else:
+            self.rivid_field = 'LINKNO'
+        print(f"Using rivid_field: {self.rivid_field}")
+        # --- END FIX ---
+
         # This is the list of all the DEM files we will go through
         DEM_List = os.listdir(self.dem_dir)
 
         # Before we get too far ahead, let's make sure that our DEMs and Flowlines have the same coordinate system
         # we will assume that all DEMs in the DEM list have the same coordinate system
-        self.flowline_gdf = gpd.GeoDataFrame()
+        self.flowline_gdf = None  # Initialize as None
 
         if self.process_stream_network:
             print(f'Reading in stream file: {self.flowline.name}')
@@ -1162,39 +1199,64 @@ class Dam:
             print(f'DEM bounds: {dem_bounds}')
             print(f'DEM CRS: {dem_crs}')
 
+            layer_name = None
             # Read stream file with bbox filter (much more efficient!)
             if self.flowline.name.endswith(".gdb"):
-                # Read the layer from the geodatabase with bbox
                 with fiona.Env():
-                    with fiona.open(self.flowline, layer="geoglowsv2") as src:
+                    layers = fiona.listlayers(self.flowline)
+                    if "geoglowsv2" in layers:
+                        layer_name = "geoglowsv2"
+                    elif "NHDFlowline" in layers:
+                        layer_name = "NHDFlowline"
+                    elif self.rivid_field == 'hydroseq' and "NHDFlowline" in layers:
+                        layer_name = "NHDFlowline"
+                    elif self.rivid_field == 'LINKNO' and "geoglowsv2" in layers:
+                        layer_name = "geoglowsv2"
+                    elif len(layers) == 1:
+                        layer_name = layers[0]
+                    else:
+                        print(
+                            f"Warning: Could not auto-determine layer in {self.flowline}. Found: {layers}. Trying first layer.")
+                        layer_name = layers[0]
+
+                    with fiona.open(self.flowline, layer=layer_name) as src:
                         stream_crs = src.crs
             elif self.flowline.name.endswith(".shp") or self.flowline.name.endswith(".gpkg"):
-                stream_meta = gpd.read_file(self.flowline, rows=1)
+                if self.flowline.name.endswith(".gpkg"):
+                    layers = fiona.listlayers(self.flowline)
+                    if "geoglowsv2" in layers:
+                        layer_name = "geoglowsv2"
+                    elif "NHDFlowline" in layers:
+                        layer_name = "NHDFlowline"
+                    elif self.rivid_field == 'hydroseq' and "NHDFlowline" in layers:
+                        layer_name = "NHDFlowline"
+                    elif self.rivid_field == 'LINKNO' and "geoglowsv2" in layers:
+                        layer_name = "geoglowsv2"
+                    elif len(layers) == 1:
+                        layer_name = layers[0]
+                    else:
+                        print(
+                            f"Warning: Could not auto-determine layer in {self.flowline}. Found: {layers}. Trying first layer.")
+                        layer_name = layers[0]
+
+                stream_meta = gpd.read_file(self.flowline, rows=1, layer=layer_name)
                 stream_crs = stream_meta.crs
             else:
-                stream_crs = f"EPSG:{dem_crs}"
+                raise ValueError(f"Unsupported flowline file type: {self.flowline.name}")
 
             dem_bbox_gdf = dem_bbox_gdf.to_crs(stream_crs)
             bbox_geom = dem_bbox_gdf.geometry.iloc[0].bounds
 
-            if self.flowline.name.endswith(".gdb"):
-                layer_name = "geoglowsv2"
-            elif "NHD" in self.flowline.name:
-                layer_name = "NHDFlowline"
-            else:
-                layer_name = None
-
             self.flowline_gdf = gpd.read_file(self.flowline, layer=layer_name, engine='fiona', bbox=bbox_geom)
 
             # if the river id field has values greater than 32-bit int, subtract 5000000000000 from it
-            if 'hydroseq' in self.flowline_gdf.columns:
+            if self.rivid_field == 'hydroseq':
                 if self.flowline_gdf['hydroseq'].max() > 2147483647:
                     self.flowline_gdf['hydroseq'] = self.flowline_gdf['hydroseq'] - 5000000000000
                     # do the same for dnhydroseq if it exists
                     if 'dnhydroseq' in self.flowline_gdf.columns:
                         self.flowline_gdf['dnhydroseq'] = self.flowline_gdf['dnhydroseq'] - 5000000000000
                     print('Adjusted hydroseq values by subtracting 5000000000000 to fit within 32-bit integer range.')
-
 
             print(f'Filtered stream features: {len(self.flowline_gdf)} (vs reading entire file)')
 
@@ -1239,7 +1301,6 @@ class Dam:
             print(f"process_dam: Deleted empty folder: {self.esa_lc_dir}")
         else:
             print(f"process_dam: Folder {self.esa_lc_dir} does not exist.")
-
 
     def _assess_dam(self, dem):
         dem_name = dem
@@ -1315,16 +1376,23 @@ class Dam:
         # read in the reanalysis streamflow and break the code if the dataframe is empty or if the streamflow is all 0
         dem_reanalysis_flowfile_df = pd.read_csv(self.reanalysis_csv)
         if (dem_reanalysis_flowfile_df.empty
-                or dem_reanalysis_flowfile_df['qout_max'].mean() <= 0
+                or 'rp2' not in dem_reanalysis_flowfile_df.columns  # Check for a key flow col
                 or len(dem_reanalysis_flowfile_df.index) == 0):
-            print(f"Dam_Assessment: Results for {dem} are not possible because we don't have streamflow estimates...")
+            print(
+                f"Dam_Assessment: Results for {dem} are not possible because we don't have valid streamflow estimates...")
             return
 
         # Create our Curve and VDT Database data
-        if not os.path.exists(self.bathy_tif) or not os.path.exists(self.vdt_txt) or not os.path.exists(self.curvefile_csv):
+        if not os.path.exists(self.bathy_tif) or not os.path.exists(self.vdt_txt) or not os.path.exists(
+                self.curvefile_csv):
             print(f'Dam_Assessment: Cannot find bathy file, so creating {self.bathy_tif}')
             arc = Arc(self.arc_input)
             arc.run()  # Runs ARC
+
+        # Check if ARC ran successfully by seeing if the outputs exist
+        if not os.path.exists(self.vdt_txt) or not os.path.exists(self.curvefile_csv):
+            print(f"ARC run appears to have failed. Skipping post-processing for {self.dam_id}.")
+            return
 
         # Now we need to use the dam_shp and vdt_txt to find the stream cells at distance increments below the dam
         self._find_strm_up_downstream()
@@ -1333,4 +1401,3 @@ class Dam:
         self.vdt_gdf.to_file(local_vdt_shp)
         self.curve_data_gdf.to_file(local_cf_shp)
         self.xs_gdf.to_file(local_xs_shp)
-        

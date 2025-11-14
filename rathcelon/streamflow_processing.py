@@ -1,5 +1,10 @@
-#Code to download GEOGLOWS retrospective datasets
-#GEOGLOWS data can be downloaded from http://geoglows-v2.s3-website-us-west-2.amazonaws.com/
+# Code to download GEOGLOWS retrospective datasets
+# GEOGLOWS data can be downloaded from http://geoglows-v2.s3-website-us-west-2.amazonaws.com/
+
+# built-in imports
+import os
+import io
+import time
 
 # third-party imports
 import geopandas as gpd
@@ -9,8 +14,6 @@ from shapely.geometry import Point
 import s3fs
 import xarray as xr
 import requests
-import io
-import time
 
 from .classes import Dam
 
@@ -21,7 +24,7 @@ def get_nwm_rp(comids: list[int]):
     header = {'x-api-key': 'AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II'}
     params = {'comids': ','.join(map(str, comids)),
               'output_format': 'csv',
-              'order_by_comid': False,}
+              'order_by_comid': False, }
 
     response = requests.get(rp_url, params=params, headers=header, timeout=60)
 
@@ -36,7 +39,7 @@ def get_nwm_rp(comids: list[int]):
     return return_period_df
 
 
-def get_stream_coords(stream_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: list[int|str], method='centroid'):
+def get_stream_coords(stream_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: list[int | str], method='centroid'):
     """
 
     Parameters
@@ -51,8 +54,12 @@ def get_stream_coords(stream_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: li
     results - each rivid and its coords {rivid: [lat, lon]}
     """
     # Ensure original CRS is EPSG:4326 for lat/lon output
-    if stream_gdf.crs != "EPSG:4326":
-        stream_gdf = stream_gdf.to_crs("EPSG:4326")
+    if stream_gdf.crs != "EPSG:4269":
+        # Using 4269 as it's a common default for lat/lon
+        try:
+            stream_gdf = stream_gdf.to_crs("EPSG:4269")
+        except Exception as e:
+            print(f"Warning: Could not reproject stream GDF to EPSG:4269. Assuming WGS84. Error: {e}")
 
     result = {}
 
@@ -60,7 +67,7 @@ def get_stream_coords(stream_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: li
         match = stream_gdf[stream_gdf[rivid_field] == rivid]
 
         if match.empty:
-            print(f"No match found for {rivid_field} = {rivid}" )
+            print(f"No match found for {rivid_field} = {rivid}")
             continue
 
         geom = match.geometry.iloc[0]
@@ -105,7 +112,7 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     print('Process_and_Write_Retrospective_Data_for_Dam: Ensure there is at least one row remaining')
     if dam_gdf.empty:
         raise ValueError("No matching dam found for the given dam_id.")
-    
+
     # Reset index to avoid index errors
     print('Process_and_Write_Retrospective_Data_for_Dam: Reset index to avoid index errors')
     dam_gdf = dam_gdf.reset_index(drop=True)
@@ -119,7 +126,6 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     # Determine an appropriate UTM zone using GeoPandas
     dam.flowline_gdf = dam.flowline_gdf[dam.flowline_gdf.geometry.notnull()]
     dam.flowline_gdf = dam.flowline_gdf[~dam.flowline_gdf.geometry.is_empty]
-
 
     if not dam.flowline_gdf.empty:
         utm_crs = dam.flowline_gdf.estimate_utm_crs()
@@ -148,11 +154,12 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     # downstream_gdf = dam.flowline_gdf[dam.flowline_gdf['LINKNO'] == downstream_rivid]
 
     # set the field names equal to the values as they appear in GEOGLOWS or NHDPlus
+    # This is already set in dam.rivid_field by the classes.py logic
     if dam.rivid_field == 'LINKNO':
         ds_rivid_field = 'DSLINKNO'
         stream_order_field = 'strmOrder'
 
-    else: #  rivid_field == 'hydroseq'
+    else:  # rivid_field == 'hydroseq'
         ds_rivid_field = 'dnhydroseq'
         stream_order_field = 'streamorde'
 
@@ -188,15 +195,15 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     for i in range(8):
         # Find the stream segment whose LINKNO matches the current downstream rivid.
         segment = dam.flowline_gdf[dam.flowline_gdf[dam.rivid_field] == current_downstream_rivid]
-        
+
         # If no segment is found, break the loop.
         if segment.empty:
             print(f"No downstream segment found after {i} segments.")
             break
-        
+
         # Append the found segment to our list.
         downstream_segments.append(segment)
-        
+
         # Update the current_downstream_rivid to the DSLINKNO of the found segment.
         # This will be used to find the next downstream segment.
         current_downstream_rivid = segment[ds_rivid_field].values[0]
@@ -210,13 +217,12 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
         downstream_gdf = gpd.GeoDataFrame()
 
     # merge the StrmShp_filtered_gdf, upstream_gdf, and downstream_gdf into a single geodataframe
-    print('Process_and_Write_Retrospective_Data_for_Dam: merge the filtered_flowline_gdf, upstream_gdf, and downstream_gdf into a single geodataframe')
+    print(
+        'Process_and_Write_Retrospective_Data_for_Dam: merge the filtered_flowline_gdf, upstream_gdf, and downstream_gdf into a single geodataframe')
     StrmShp_filtered_gdf = pd.concat([filtered_flowline_gdf, upstream_gdf, downstream_gdf])
-    
+
     StrmShp_filtered_gdf.to_file(dam.dam_shp)
     StrmShp_filtered_gdf[dam.rivid_field] = StrmShp_filtered_gdf[dam.rivid_field].astype(int)
-
-
 
     # create a list of river IDs to throw to AWS
     # rivids_str = StrmShp_filtered_gdf[rivid_field].astype(str).to_list()
@@ -224,224 +230,221 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
 
     print(f'Rivids for dam {dam.rivid_field}: {rivids_int}')
 
-    if dam.rivid_field == 'LINKNO':
-        # Set up the S3 connection
-        ODP_S3_BUCKET_REGION = 'us-west-2'
-        s3 = s3fs.S3FileSystem(anon=True, client_kwargs=dict(region_name=ODP_S3_BUCKET_REGION))
+    # Define final_df outside the blocks
+    final_df = None
 
-        # # Load FDC data from S3 using Dask
-        # # Convert to a list of integers
-        fdc_s3_uri = 's3://geoglows-v2/retrospective/fdc.zarr'
-        fdc_s3store = s3fs.S3Map(root=fdc_s3_uri, s3=s3, check=False)
-        p_exceedance = [float(50.0), float(0.0)]
-        fdc_ds = xr.open_zarr(fdc_s3store).sel(p_exceed=p_exceedance, river_id=rivids_int)
+    # Check if a local parquet file is provided and exists
+    if dam.flow_parquet_file and os.path.exists(dam.flow_parquet_file):
+        print(f"Reading streamflow data from local parquet file: {dam.flow_parquet_file}")
+        try:
+            # 1. Load the parquet file
+            flow_df = pd.read_parquet(dam.flow_parquet_file)
 
+            # 2. Check for required columns in parquet
+            if 'latitude' not in flow_df.columns or 'longitude' not in flow_df.columns:
+                raise ValueError("Parquet file must contain 'latitude' and 'longitude' columns.")
 
-        # Convert Xarray to Dask DataFrame
-        fdc_df = fdc_ds.to_dataframe().reset_index()
+            # 3. Convert parquet data to a GeoDataFrame
+            flow_gdf = gpd.GeoDataFrame(
+                flow_df,
+                geometry=gpd.points_from_xy(flow_df.longitude, flow_df.latitude),
+                crs="EPSG:4269"  # Assume WGS84 for lat/lon
+            )
 
+            # 4. Get coordinates for the flowline segments we care about (from dam object)
+            #    rivids_int is already defined (e.g., [LINKNO_1, LINKNO_2, ...])
+            #    dam.flowline_gdf is the full GDF for the area, still in its original CRS (flowline_crs)
+            strm_coords = get_stream_coords(dam.flowline_gdf, dam.rivid_field, rivids_int, method='centroid')
 
-        # Check if fdc_df is empty
-        if fdc_df.empty:
-            # print(f"Skipping processing for {DEM_Tile} because fdc_df is empty.")
-            dam.reanalysis_csv = None
-            dam.dam_shp = None
-            rivids_int = None
-            StrmShp_filtered_gdf = None
-            return dam.reanalysis_csv, dam.dam_shp, rivids_int, StrmShp_filtered_gdf
+            if not strm_coords:
+                raise ValueError("Could not extract stream coordinates for the dam's flowlines.")
 
-        # Create 'qout_median' column where 'p_exceed' is 50.0
-        fdc_df.loc[fdc_df['p_exceed'] == 50.0, 'qout_median'] = fdc_df['hourly_annual']
-        # Create 'qout_max' column where 'p_exceed' is 100.0
-        fdc_df.loc[fdc_df['p_exceed'] == 0.0, 'qout_max'] = fdc_df['hourly_annual']
-        # Group by 'river_id' and aggregate 'qout_median' and 'qout_max' by taking the non-null value
-        fdc_df = fdc_df.groupby('river_id').agg({
-            'qout_median': 'max',  # or use 'max' as both approaches would work
-            'qout_max': 'max'
-        }).reset_index()
+            # 5. Convert stream coordinates to a GeoDataFrame
+            strm_df = pd.DataFrame.from_dict(strm_coords, orient='index', columns=['latitude', 'longitude'])
+            strm_df['original_rivid'] = strm_df.index
 
-        # set the dataframe index
-        fdc_df = fdc_df.set_index('river_id')
+            strm_gdf = gpd.GeoDataFrame(
+                strm_df,
+                geometry=gpd.points_from_xy(strm_df.longitude, strm_df.latitude),
+                crs="EPSG:4269"  # CRS from get_stream_coords
+            )
 
-        # round the values
-        fdc_df['qout_median'] = fdc_df['qout_median'].round(3)
-        fdc_df['qout_max'] = fdc_df['qout_max'].round(3)
+            # 6. Reproject both to the same UTM CRS for accurate distance joining
+            #    utm_crs was defined earlier when finding the closest stream
+            flow_gdf = flow_gdf.to_crs(utm_crs)
+            strm_gdf = strm_gdf.to_crs(utm_crs)
 
-        # drop all the columns except for the river_id, qout_median, and qout_max
-        fdc_df = fdc_df[['qout_median', 'qout_max']]
+            # 7. Perform the spatial join
+            #    For each stream segment (strm_gdf), find the nearest NWM point (flow_gdf)
+            joined_gdf = gpd.sjoin_nearest(strm_gdf, flow_gdf, how='left')
 
-        # Load return periods data from S3 using Dask
-        rp_s3_uri = 's3://geoglows-v2/retrospective/return-periods.zarr'
-        rp_s3store = s3fs.S3Map(root=rp_s3_uri, s3=s3, check=False)
-        rp_ds = xr.open_zarr(rp_s3store).sel(river_id=rivids_int)
+            # 8. Set up the final DataFrame
+            final_df = joined_gdf.set_index('original_rivid')
+            final_df.index.name = 'river_id'  # Match index name of other methods
 
-        # Convert Xarray to Dask DataFrame and pivot
-        rp_df = rp_ds.to_dataframe().reset_index()
+            # Drop unnecessary columns
+            cols_to_drop = ['geometry', 'latitude', 'longitude', 'index_right']
+            # Drop columns that might have been duplicated from the right GDF
+            cols_to_drop.extend([col for col in final_df.columns if col.endswith('_right')])
 
-        # find the maximum between the gumbel and logpearson3 return periods and label this new column 'return_period_flow'
-        rp_df['return_period_flow'] = rp_df[['gumbel', 'logpearson3']].mean(axis=1).round(3)
+            final_df = final_df.drop(columns=[col for col in cols_to_drop if col in final_df.columns], errors='ignore')
 
-        # keep just the column 'return_period_flow'
-        rp_df = rp_df[['river_id', 'return_period', 'return_period_flow']]
+            if final_df.empty:
+                print(f"Warning: Spatial join between flowlines and parquet file yielded no results.")
+                final_df = None  # Fallback
+            else:
+                print(f"Successfully loaded and joined {len(final_df)} reaches from parquet file.")
 
-        # Check if rp_df is empty
-        if rp_df.empty:
-            # print(f"Skipping processing for {DEM_Tile} because rp_df is empty.")
-            dam.reanalysis_csv = None
-            dam.dam_shp = None
-            rivids_int = None
-            StrmShp_filtered_gdf = None
-            return dam.reanalysis_csv, dam.dam_shp, rivids_int, StrmShp_filtered_gdf
+        except Exception as e:
+            print(f"Error reading or processing local parquet file: {e}. Falling back to remote data sources.")
+            final_df = None  # Ensure fallback on error
 
-        # Convert 'return_period' to category dtype
-        rp_df['return_period'] = rp_df['return_period'].astype('category')
+    # If final_df was not populated by the parquet file, use the existing logic
+    if final_df is None:
+        print("Local parquet file not used or failed, falling back to remote data sources...")
+        if dam.rivid_field == 'LINKNO':
+            # Set up the S3 connection
+            ODP_S3_BUCKET_REGION = 'us-west-2'
+            s3 = s3fs.S3FileSystem(anon=True, client_kwargs=dict(region_name=ODP_S3_BUCKET_REGION))
 
-        # Pivot the table
-        rp_pivot_df = rp_df.pivot_table(index='river_id', columns='return_period', values='return_period_flow', aggfunc='mean')
+            # # Load FDC data from S3 using Dask
+            # # Convert to a list of integers
+            fdc_s3_uri = 's3://geoglows-v2/retrospective/fdc.zarr'
+            fdc_s3store = s3fs.S3Map(root=fdc_s3_uri, s3=s3, check=False)
+            p_exceedance = [float(50.0), float(0.0)]
+            fdc_ds = xr.open_zarr(fdc_s3store).sel(p_exceed=p_exceedance, river_id=rivids_int)
 
-        # Rename columns to indicate return periods
-        rp_pivot_df = rp_pivot_df.rename(columns={col: f'rp{int(col)}' for col in rp_pivot_df.columns})
+            # Convert Xarray to Dask DataFrame
+            fdc_df = fdc_ds.to_dataframe().reset_index()
 
-        # Combine the results from retrospective and return periods data
-        # final_df = pd.concat([combined_df, rp_pivot_df], axis=1)
-        final_df = pd.concat([fdc_df, rp_pivot_df], axis=1)
+            # Check if fdc_df is empty
+            if fdc_df.empty:
+                # print(f"Skipping processing for {DEM_Tile} because fdc_df is empty.")
+                dam.reanalysis_csv = None
+                dam.dam_shp = None
+                rivids_int = None
+                StrmShp_filtered_gdf = None
+                return dam.reanalysis_csv, dam.dam_shp, rivids_int, StrmShp_filtered_gdf
 
-    else:
-        strm_coords = get_stream_coords(dam.flowline_gdf, dam.rivid_field, rivids_int)
-        print(f'strm_coords: {strm_coords}')
+            # Create 'qout_median' column where 'p_exceed' is 50.0
+            fdc_df.loc[fdc_df['p_exceed'] == 50.0, 'qout_median'] = fdc_df['hourly_annual']
+            # Create 'qout_max' column where 'p_exceed' is 100.0
+            fdc_df.loc[fdc_df['p_exceed'] == 0.0, 'qout_max'] = fdc_df['hourly_annual']
+            # Group by 'river_id' and aggregate 'qout_median' and 'qout_max' by taking the non-null value
+            fdc_df = fdc_df.groupby('river_id').agg({
+                'qout_median': 'max',  # or use 'max' as both approaches would work
+                'qout_max': 'max'
+            }).reset_index()
 
-        hydroseqs = []
-        reach_ids = []
+            # set the dataframe index
+            fdc_df = fdc_df.set_index('river_id')
 
-        for key, value in strm_coords.items():
-            lat, lon = value
-            url = f"https://nwm-api.ciroh.org/geometry?lat={lat}&lon={lon}&output_format=csv&key=AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II"
+            # round the values
+            fdc_df['qout_median'] = fdc_df['qout_median'].round(3)
+            fdc_df['qout_max'] = fdc_df['qout_max'].round(3)
 
-            retries = 3
-            for attempt in range(retries):
-                try:
-                    r = requests.get(url, timeout=30)
-                    r.raise_for_status()
+            # drop all the columns except for the river_id, qout_median, and qout_max
+            fdc_df = fdc_df[['qout_median', 'qout_max']]
 
-                    df = pd.read_csv(io.StringIO(r.text))
-                    reach_id = df['station_id'].values[0]
+            # Load return periods data from S3 using Dask
+            rp_s3_uri = 's3://geoglows-v2/retrospective/return-periods.zarr'
+            rp_s3store = s3fs.S3Map(root=rp_s3_uri, s3=s3, check=False)
+            rp_ds = xr.open_zarr(rp_s3store).sel(river_id=rivids_int)
 
-                    hydroseqs.append(key)
-                    reach_ids.append(reach_id)
-                    break
+            # Convert Xarray to Dask DataFrame and pivot
+            rp_df = rp_ds.to_dataframe().reset_index()
 
-                except (requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
-                    print(f"Request failed for key={key} lat={lat} lon={lon}, attempt {attempt + 1}/{retries}")
-                    print(f"Error: {e}")
-                    if attempt < retries - 1:
-                        wait = 2 ** attempt
-                        print(f"Retrying in {wait} seconds...")
-                        time.sleep(wait)
-                    else:
-                        print("Giving up on this point.\n")
-                        continue
+            # find the maximum between the gumbel and logpearson3 return periods and label this new column 'return_period_flow'
+            rp_df['return_period_flow'] = rp_df[['gumbel', 'logpearson3']].mean(axis=1).round(3)
 
-        # Fetch return periods (rp2, rp100, etc.)
-        rp_df = get_nwm_rp(reach_ids)
+            # keep just the column 'return_period_flow'
+            rp_df = rp_df[['river_id', 'return_period', 'return_period_flow']]
 
-        # Add derived flows directly to rp_df without dropping anything
-        rp_df["qout_median"] = (rp_df["rp2"] / 2).round(3)
-        rp_df["qout_max"] = (rp_df["rp100"] * 1.5).round(3)
+            # Check if rp_df is empty
+            if rp_df.empty:
+                # print(f"Skipping processing for {DEM_Tile} because rp_df is empty.")
+                dam.reanalysis_csv = None
+                dam.dam_shp = None
+                rivids_int = None
+                StrmShp_filtered_gdf = None
+                return dam.reanalysis_csv, dam.dam_shp, rivids_int, StrmShp_filtered_gdf
 
-        # Reorder columns so qout_median and qout_max come first
-        cols = ["qout_median", "qout_max"] + [col for col in rp_df.columns if col.startswith("rp")]
-        rp_df = rp_df[cols]
-        print(rp_df)
+            # Convert 'return_period' to category dtype
+            rp_df['return_period'] = rp_df['return_period'].astype('category')
 
-        # Map hydroseqs to river IDs
-        map_df = pd.DataFrame({'hydroseq': hydroseqs, 'river_id': reach_ids})
-        print(map_df)
+            # Pivot the table
+            rp_pivot_df = rp_df.pivot_table(index='river_id', columns='return_period', values='return_period_flow',
+                                            aggfunc='mean')
 
-        # Merge and reshape
-        final_df = map_df.merge(rp_df, on='river_id') \
-            .set_index('hydroseq') \
-            .drop(columns='river_id')
+            # Rename columns to indicate return periods
+            rp_pivot_df = rp_pivot_df.rename(columns={col: f'rp{int(col)}' for col in rp_pivot_df.columns})
 
-        # Set index name for clarity
-        final_df.index.name = 'river_id'
+            # Combine the results from retrospective and return periods data
+            # final_df = pd.concat([combined_df, rp_pivot_df], axis=1)
+            final_df = pd.concat([fdc_df, rp_pivot_df], axis=1)
 
-        print(final_df)
+        else:  # This is the NWM (hydroseq) logic
+            strm_coords = get_stream_coords(dam.flowline_gdf, dam.rivid_field, rivids_int)
+            print(f'strm_coords: {strm_coords}')
 
+            hydroseqs = []
+            reach_ids = []
 
-    # else:
-    #     strm_coords = get_stream_coords(dam.flowline_gdf, dam.rivid_field, rivids_int)
-    #     print(f'strm_coords: {strm_coords}')
-    #     # use the nwm api to get reach_id based on lat lon...
-    #     hydroseqs = []
-    #     reach_ids = []
-    #
-    #     for key, value in strm_coords.items():
-    #         lat, lon = value
-    #         url = f"https://nwm-api.ciroh.org/geometry?lat={lat}&lon={lon}&output_format=csv&key=AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II"
-    #
-    #         retries = 3
-    #         for attempt in range(retries):
-    #             try:
-    #                 r = requests.get(url, timeout=30)  # 30s max wait per request
-    #                 r.raise_for_status()
-    #
-    #                 df = pd.read_csv(io.StringIO(r.text))
-    #                 reach_id = df['station_id'].values[0]
-    #
-    #                 hydroseqs.append(key)
-    #                 reach_ids.append(reach_id)
-    #                 break  # success, exit retry loop
-    #
-    #             except (requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
-    #                 print(f"Request failed for key={key} lat={lat} lon={lon}, attempt {attempt + 1}/{retries}")
-    #                 print(f"Error: {e}")
-    #
-    #                 if attempt < retries - 1:
-    #                     wait = 2 ** attempt
-    #                     print(f"Retrying in {wait} seconds...")
-    #                     time.sleep(wait)
-    #                 else:
-    #                     print("Giving up on this point.\n")
-    #                     continue  # skip this point after final failure
-    #
-    #     # now hydroseq_reach_id has each hydroseq matched with its reach_id
-    #
-    #     # we don't really need the median or max flow... so this may be useful later, but i'll comment it out for now
-    #     # if known_baseflow is None:
-    #     s3_path = 's3://noaa-nwm-retrospective-3-0-pds/CONUS/zarr/chrtout.zarr'
-    #     fs = s3fs.S3FileSystem(anon=True)
-    #     nwm_ds = xr.open_zarr(fs.get_mapper(s3_path), consolidated=True)
-    #     reach_ds = nwm_ds['streamflow'].sel(feature_id=reach_ids)
-    #     df = reach_ds.to_dataframe().reset_index()
-    #     df = df.groupby("feature_id").agg(
-    #         qout_median=("streamflow", "median"),
-    #         qout_max=("streamflow", "max"),
-    #     ).round(3)
-    #     df.index.name = 'river_id'
-    #
-    #     # else:
-    #     #     df = pd.DataFrame({'river_id': reach_ids,
-    #     #                        'qout_median': 1,
-    #     #                        'qout_max': 100,}).set_index('river_id')
-    #
-    #     # Get return period DataFrame
-    #     rp_df = get_nwm_rp(reach_ids)
-    #
-    #     # Merge it with df on index (river_id)
-    #     final_df = pd.concat([df, rp_df], axis=1)
-    #
-    #     # Create a DataFrame to map hydroseq to river_id and join it in
-    #     map_df = pd.DataFrame({'hydroseq': hydroseqs, 'river_id': reach_ids})
-    #
-    #     # Merge map_df with final_df on river_id, set hydroseq as index, and drop river_id
-    #     final_df = map_df.merge(final_df, on='river_id') \
-    #         .set_index('hydroseq') \
-    #         .drop(columns='river_id')
-    #
-    #     # Rename the index to river_id
-    #     final_df.index.name = 'river_id'
-    #     print(final_df)
+            for key, value in strm_coords.items():
+                lat, lon = value
+                url = f"https://nwm-api.ciroh.org/geometry?lat={lat}&lon={lon}&output_format=csv&key=AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II"
 
+                retries = 3
+                for attempt in range(retries):
+                    try:
+                        r = requests.get(url, timeout=30)
+                        r.raise_for_status()
+
+                        df = pd.read_csv(io.StringIO(r.text))
+                        reach_id = df['station_id'].values[0]
+
+                        hydroseqs.append(key)
+                        reach_ids.append(reach_id)
+                        break
+
+                    except (requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
+                        print(f"Request failed for key={key} lat={lat} lon={lon}, attempt {attempt + 1}/{retries}")
+                        print(f"Error: {e}")
+                        if attempt < retries - 1:
+                            wait = 2 ** attempt
+                            print(f"Retrying in {wait} seconds...")
+                            time.sleep(wait)
+                        else:
+                            print("Giving up on this point.\n")
+                            continue
+
+            # Fetch return periods (rp2, rp100, etc.)
+            rp_df = get_nwm_rp(reach_ids)
+
+            # Add derived flows directly to rp_df without dropping anything
+            rp_df["qout_median"] = (rp_df["rp2"] / 2).round(3)
+            rp_df["qout_max"] = (rp_df["rp100"] * 1.5).round(3)
+
+            # Reorder columns so qout_median and qout_max come first
+            cols = ["qout_median", "qout_max"] + [col for col in rp_df.columns if col.startswith("rp")]
+            rp_df = rp_df[cols]
+            print(rp_df)
+
+            # Map hydroseqs to river IDs
+            map_df = pd.DataFrame({'hydroseq': hydroseqs, 'river_id': reach_ids})
+            print(map_df)
+
+            # Merge and reshape
+            final_df = map_df.merge(rp_df, on='river_id') \
+                .set_index('hydroseq') \
+                .drop(columns='river_id')
+
+            # Set index name for clarity
+            final_df.index.name = 'river_id'
+
+            print(final_df)
+
+    # This part of the code runs regardless of the data source (parquet, zarr, or api)
     final_df['COMID'] = final_df.index
 
     # Column to move to the front
@@ -452,15 +455,18 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     final_df = final_df[columns]
 
     # Add a safety factor to one of the columns we could use to run the ARC model
-    print('Process_and_Write_Retrospective_Data_for_Dam: Add a safety factor to one of the columns we could use to run the ARC model')
+    print(
+        'Process_and_Write_Retrospective_Data_for_Dam: Add a safety factor to one of the columns we could use to run the ARC model')
     for col in final_df.columns:
-        if col in ['qout_max','rp100']:
-            final_df[f'{col}_premium'] = round(final_df[col]*1.5, 3)
+        if col in ['qout_max', 'rp100']:
+            # Check if column already exists before creating it
+            if f'{col}_premium' not in final_df.columns:
+                final_df[f'{col}_premium'] = round(final_df[col] * 1.5, 3)
 
     # add the known_baseflow column to the final_df
     if dam.known_baseflow is not None:
         final_df['known_baseflow'] = dam.known_baseflow
-    
+
     # add the known_channel_forming_discharge column to the final_df
     if dam.known_channel_forming_discharge is not None:
         final_df['known_channel_forming_discharge'] = dam.known_channel_forming_discharge
@@ -470,6 +476,6 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     # Write the final Dask DataFrame to CSV
     print('Process_and_Write_Retrospective_Data_for_Dam: Write the final Dask DataFrame to CSV')
     final_df.to_csv(dam.reanalysis_csv, index=False)
-    
+
     # Return the combined DataFrame as a Dask DataFrame
     return rivids_int, StrmShp_filtered_gdf

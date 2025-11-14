@@ -2,6 +2,7 @@ LICENSE
 README.md
 setup.py
 rathcelon/__init__.py
+rathcelon/classes.py
 rathcelon/esa_download_processing.py
 rathcelon/main.py
 rathcelon/streamflow_processing.py

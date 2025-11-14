@@ -137,6 +137,7 @@ def process_json_input(json_file):
             "known_baseflow": dam.get("known_baseflow", None),
             "known_channel_forming_discharge": dam.get("known_channel_forming_discharge", None),
             "upstream_elevation_change_threshold": dam.get("upstream_elevation_change_threshold", 1.0),
+            "flow_parquet_file": os.path.normpath(dam.get("flow_parquet_file")) if dam.get("flow_parquet_file") else None,
         }
 
         # Ensure the output directory exists
@@ -150,13 +151,15 @@ def process_json_input(json_file):
 
 
 def normalize_path(path):
-    return os.path.normpath(path)
+    if path:
+        return os.path.normpath(path)
+    return None
 
 
 def process_cli_arguments(args):
     """Process input from CLI arguments."""
     output_dir = args.output_dir
-    dam_name = args.watershed
+    dam_name = args.dam
     dam_dict = {
         "name": dam_name,
         "dam_csv": normalize_path(args.dam_csv),
@@ -171,12 +174,14 @@ def process_cli_arguments(args):
         "create_reach_average_curve_file": args.create_reach_average_curve_file,
         "known_baseflow": args.known_baseflow,
         "known_channel_forming_discharge": args.known_channel_forming_discharge,
+        "upstream_elevation_change_threshold": args.upstream_elevation_change_threshold,
+        "flow_parquet_file": normalize_path(args.flow_parquet_file) if args.flow_parquet_file else None,
     }
 
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    print(f"Processing dam: {args.watershed} with parameters: {dam_dict}")
+    print(f"Processing dam: {args.dam} with parameters: {dam_dict}")
     print(f"Results will be saved in: {output_dir}")
 
     # Call the existing processing logic here
@@ -198,8 +203,8 @@ def main():
     cli_parser = subparsers.add_parser("cli", help="Process watershed parameters via CLI")
     cli_parser.add_argument("dam", type=str, help="Dam name")
     cli_parser.add_argument("dam_csv", type=str, help="Path to the dam csv file")
-    cli_parser.add_argument("dam_id_field", type=str, help="Name of the csv field with the dam id")   
-    cli_parser.add_argument("dam_id", type=int, help="ID of the dam in the damn_id_field")  
+    cli_parser.add_argument("dam_id_field", type=str, help="Name of the csv field with the dam id")
+    cli_parser.add_argument("dam_id", type=int, help="ID of the dam in the damn_id_field")
     cli_parser.add_argument("flowline", type=str, help="Path to the flowline shapefile")
     cli_parser.add_argument("dem_dir", type=str, help="Directory containing DEM files")
     cli_parser.add_argument("output_dir", type=str, help="Directory where results will be saved")
@@ -209,7 +214,8 @@ def main():
     cli_parser.add_argument("--create_reach_average_curve_file", action="store_true", help="Create a reach average curve file instead of one that varies for each stream cell")
     cli_parser.add_argument("--known_baseflow", type=float, default=None, help="Known baseflow value")
     cli_parser.add_argument("--known_channel_forming_discharge", type=float, default=None, help="Known channel forming discharge value")
-    cli_parser.add_argument("--upstream_elevation_change_threshold", type=float, help="The upstream elevation change used to identify the appropriate upstream cross-section, default is 0.5 meters", default=1.0)
+    cli_parser.add_argument("--upstream_elevation_change_threshold", type=float, help="The upstream elevation change used to identify the appropriate upstream cross-section, default is 1.0 meters", default=1.0)
+    cli_parser.add_argument("--flow_parquet_file", type=str, default=None, help="Path to a local parquet file containing streamflow data")
 
     args = parser.parse_args()
 
