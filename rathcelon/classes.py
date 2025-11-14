@@ -750,7 +750,6 @@ class Dam:
             XS_Out_File_df['Lat2'] = XS_Out_File_df['Y2']
         else:
             # Projected -> convert to WGS84
-            print("hey_1")
             transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
             print("vdt_df shape:", vdt_df.shape)
             print(vdt_df.head())

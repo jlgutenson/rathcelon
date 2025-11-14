@@ -105,7 +105,7 @@ def calculate_return_periods(ts_df: pd.DataFrame):
 
         # 2. Resample for Annual Maximum Series (AMS)
         # We need to set time as index for resampling
-        ams = group_df.set_index('time')['streamflow'].resample('A').max().dropna()
+        ams = group_df.set_index('time')['streamflow'].resample('YE').max().dropna()
 
         # 3. Fit Gumbel distribution
         rp_values = [np.nan] * len(return_periods_T)
