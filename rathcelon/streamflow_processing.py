@@ -14,29 +14,9 @@ from shapely.geometry import Point
 import s3fs
 import xarray as xr
 import requests
+from scipy.stats import gumbel_r
 
 from .classes import Dam
-
-
-def get_nwm_rp(comids: list[int]):
-    rp_url = 'https://nwm-api.ciroh.org/return-period'
-
-    header = {'x-api-key': 'AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II'}
-    params = {'comids': ','.join(map(str, comids)),
-              'output_format': 'csv',
-              'order_by_comid': False, }
-
-    response = requests.get(rp_url, params=params, headers=header, timeout=60)
-
-    if response.status_code == 200:
-        return_period_df = pd.read_csv(io.StringIO(response.text))
-    else:
-        raise requests.exceptions.HTTPError(response.text)
-    return_period_df = return_period_df.set_index("feature_id")
-    return_period_df.index.name = "river_id"
-    return_period_df.columns = ['rp2', 'rp5', 'rp10', 'rp25', 'rp50', 'rp100']
-
-    return return_period_df
 
 
 def get_stream_coords(stream_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: list[int | str], method='centroid'):
@@ -85,6 +65,88 @@ def get_stream_coords(stream_gdf: gpd.GeoDataFrame, rivid_field: str, rivids: li
         result[rivid] = [point.y, point.x]
 
     return result
+
+
+def calculate_return_periods(ts_df: pd.DataFrame):
+    """
+    Calculates return periods from a time-series dataframe using Annual Maximum Series (AMS)
+    and a Gumbel distribution.
+
+    Parameters
+    ----------
+    ts_df: A DataFrame with at least 'river_id', 'time', and 'streamflow' columns.
+
+    Returns
+    -------
+    summary_df: A DataFrame indexed by 'river_id' with summary stats
+                (qout_median, qout_max) and return periods (rp2, rp5, etc.).
+    """
+    print("Calculating return periods from time-series data...")
+    if 'time' not in ts_df.columns or 'streamflow' not in ts_df.columns:
+        raise ValueError("Parquet file must contain 'time' and 'streamflow' columns.")
+    if 'river_id' not in ts_df.columns:
+        raise ValueError("Internal error: 'river_id' not found in joined dataframe.")
+
+    # Ensure time is datetime
+    ts_df['time'] = pd.to_datetime(ts_df['time'])
+
+    grouped = ts_df.groupby('river_id')
+    summary_list = []
+
+    return_periods_T = [2, 5, 10, 25, 50, 100]
+    # Non-exceedance probability
+    return_periods_P = [1 - (1 / t) for t in return_periods_T]
+    rp_cols = [f'rp{t}' for t in return_periods_T]
+
+    for river_id, group_df in grouped:
+        # 1. Calculate simple stats
+        q_median = group_df['streamflow'].median()
+        q_max = group_df['streamflow'].max()
+
+        # 2. Resample for Annual Maximum Series (AMS)
+        # We need to set time as index for resampling
+        ams = group_df.set_index('time')['streamflow'].resample('A').max().dropna()
+
+        # 3. Fit Gumbel distribution
+        rp_values = [np.nan] * len(return_periods_T)
+        # Require at least 5 years of data for a stable fit
+        if len(ams) >= 5:
+            try:
+                # Fit Gumbel Type 1 (right-skewed)
+                loc, scale = gumbel_r.fit(ams)
+                # Calculate flow for each return period probability
+                rp_values = gumbel_r.ppf(return_periods_P, loc=loc, scale=scale)
+            except Exception as e:
+                print(f"Warning: Gumbel fit failed for river_id {river_id}: {e}")
+        else:
+            print(f"Warning: Not enough data ({len(ams)} years) for Gumbel fit on river_id {river_id}.")
+
+        # 4. Store results
+        data = {
+            'river_id': river_id,
+            'qout_median': q_median,
+            'qout_max': q_max,
+        }
+        for col, val in zip(rp_cols, rp_values):
+            data[col] = val
+
+        summary_list.append(data)
+
+    if not summary_list:
+        print("Warning: No rivers were processed for summary statistics.")
+        return pd.DataFrame()
+
+    # 5. Combine and set index
+    summary_df = pd.DataFrame(summary_list)
+    summary_df = summary_df.set_index('river_id')
+
+    # 6. Rounding for clean output
+    cols_to_round = ['qout_median', 'qout_max'] + rp_cols
+    for col in cols_to_round:
+        if col in summary_df.columns:
+            summary_df[col] = summary_df[col].round(3)
+
+    return summary_df
 
 
 def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
@@ -224,17 +286,21 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
     StrmShp_filtered_gdf.to_file(dam.dam_shp)
     StrmShp_filtered_gdf[dam.rivid_field] = StrmShp_filtered_gdf[dam.rivid_field].astype(int)
 
-    # create a list of river IDs to throw to AWS
-    # rivids_str = StrmShp_filtered_gdf[rivid_field].astype(str).to_list()
-    rivids_int = StrmShp_filtered_gdf[dam.rivid_field].astype(int).to_list()
+    # create a list of river IDs
+    rivids_int = StrmShp_filtered_gdf[rivid_field].astype(int).to_list()
 
-    print(f'Rivids for dam {dam.rivid_field}: {rivids_int}')
+    print(f'Rivids for dam {dam.rivid_field}: {rivids_str}')
 
     # Define final_df outside the blocks
     final_df = None
 
     # Check if a local parquet file is provided and exists
     if dam.flow_parquet_file and os.path.exists(dam.flow_parquet_file):
+        """
+            this section is for when NWM hydrology is selected...
+            we will access the parquet for median and max Q
+            then calculate return periods and make a reanalysis file
+        """
         print(f"Reading streamflow data from local parquet file: {dam.flow_parquet_file}")
         try:
             # 1. Load the parquet file
@@ -278,22 +344,25 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
             #    For each stream segment (strm_gdf), find the nearest NWM point (flow_gdf)
             joined_gdf = gpd.sjoin_nearest(strm_gdf, flow_gdf, how='left')
 
-            # 8. Set up the final DataFrame
-            final_df = joined_gdf.set_index('original_rivid')
-            final_df.index.name = 'river_id'  # Match index name of other methods
+            # 8. Set up the time-series DataFrame
+            ts_df = joined_gdf.rename(columns={'original_rivid': 'river_id'})
 
             # Drop unnecessary columns
             cols_to_drop = ['geometry', 'latitude', 'longitude', 'index_right']
             # Drop columns that might have been duplicated from the right GDF
-            cols_to_drop.extend([col for col in final_df.columns if col.endswith('_right')])
+            cols_to_drop.extend([col for col in ts_df.columns if col.endswith('_right')])
+            ts_df = ts_df.drop(columns=[col for col in cols_to_drop if col in ts_df.columns], errors='ignore')
 
-            final_df = final_df.drop(columns=[col for col in cols_to_drop if col in final_df.columns], errors='ignore')
+            # 9. Calculate summary statistics (including return periods)
+            # This calls the new function you just added
+            final_df = calculate_return_periods(ts_df)
+            final_df.index.name = 'river_id'  # Ensure index name matches other methods
 
             if final_df.empty:
-                print(f"Warning: Spatial join between flowlines and parquet file yielded no results.")
+                print(f"Warning: Statistical analysis yielded no results.")
                 final_df = None  # Fallback
             else:
-                print(f"Successfully loaded and joined {len(final_df)} reaches from parquet file.")
+                print(f"Successfully calculated summary statistics for {len(final_df)} reaches from parquet file.")
 
         except Exception as e:
             print(f"Error reading or processing local parquet file: {e}. Falling back to remote data sources.")
@@ -383,66 +452,6 @@ def Process_and_Write_Retrospective_Data_for_Dam(dam: Dam):
             # final_df = pd.concat([combined_df, rp_pivot_df], axis=1)
             final_df = pd.concat([fdc_df, rp_pivot_df], axis=1)
 
-        else:  # This is the NWM (hydroseq) logic
-            strm_coords = get_stream_coords(dam.flowline_gdf, dam.rivid_field, rivids_int)
-            print(f'strm_coords: {strm_coords}')
-
-            hydroseqs = []
-            reach_ids = []
-
-            for key, value in strm_coords.items():
-                lat, lon = value
-                url = f"https://nwm-api.ciroh.org/geometry?lat={lat}&lon={lon}&output_format=csv&key=AIzaSyC4BXXMQ9KIodnLnThFi5Iv4y1fDR4U1II"
-
-                retries = 3
-                for attempt in range(retries):
-                    try:
-                        r = requests.get(url, timeout=30)
-                        r.raise_for_status()
-
-                        df = pd.read_csv(io.StringIO(r.text))
-                        reach_id = df['station_id'].values[0]
-
-                        hydroseqs.append(key)
-                        reach_ids.append(reach_id)
-                        break
-
-                    except (requests.exceptions.Timeout, requests.exceptions.HTTPError) as e:
-                        print(f"Request failed for key={key} lat={lat} lon={lon}, attempt {attempt + 1}/{retries}")
-                        print(f"Error: {e}")
-                        if attempt < retries - 1:
-                            wait = 2 ** attempt
-                            print(f"Retrying in {wait} seconds...")
-                            time.sleep(wait)
-                        else:
-                            print("Giving up on this point.\n")
-                            continue
-
-            # Fetch return periods (rp2, rp100, etc.)
-            rp_df = get_nwm_rp(reach_ids)
-
-            # Add derived flows directly to rp_df without dropping anything
-            rp_df["qout_median"] = (rp_df["rp2"] / 2).round(3)
-            rp_df["qout_max"] = (rp_df["rp100"] * 1.5).round(3)
-
-            # Reorder columns so qout_median and qout_max come first
-            cols = ["qout_median", "qout_max"] + [col for col in rp_df.columns if col.startswith("rp")]
-            rp_df = rp_df[cols]
-            print(rp_df)
-
-            # Map hydroseqs to river IDs
-            map_df = pd.DataFrame({'hydroseq': hydroseqs, 'river_id': reach_ids})
-            print(map_df)
-
-            # Merge and reshape
-            final_df = map_df.merge(rp_df, on='river_id') \
-                .set_index('hydroseq') \
-                .drop(columns='river_id')
-
-            # Set index name for clarity
-            final_df.index.name = 'river_id'
-
-            print(final_df)
 
     # This part of the code runs regardless of the data source (parquet, zarr, or api)
     final_df['COMID'] = final_df.index
