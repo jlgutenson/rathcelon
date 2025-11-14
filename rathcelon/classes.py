@@ -855,23 +855,16 @@ class Dam:
                         max_slope = segment_slope
                         best_segment_start_idx = i  # Save the start of the highest slope segment
 
-            # Use the point upstream of the segment with highest slope
+            # Use the point at the END of the segment with highest slope
             if max_slope > 0:
-                if best_segment_start_idx > 0:
-                    # Use the point upstream (before) the highest slope segment
-                    upstream_idx = best_segment_start_idx - 1
-                    upstream_point = upstream_points[upstream_idx]
-                    current_link = upstream_links[upstream_idx]
-                    final_distance = upstream_distances[upstream_idx]
-                    print(
-                        f"Selected upstream point before segment with highest slope: {max_slope:.6f} at distance {final_distance:.3f}m")
-                else:
-                    # If the highest slope segment is the first one, use the start of that segment
-                    upstream_point = upstream_points[best_segment_start_idx]
-                    current_link = upstream_links[best_segment_start_idx]
-                    final_distance = upstream_distances[best_segment_start_idx]
-                    print(
-                        f"Highest slope segment is first segment, using start point at distance {final_distance:.3f}m")
+                # Calculate the index for the end of the best segment
+                upstream_idx = min(best_segment_start_idx + segment_size + 1, len(upstream_points) + 1)
+
+                upstream_point = upstream_points[upstream_idx]
+                current_link = upstream_links[upstream_idx]
+                final_distance = upstream_distances[upstream_idx]
+                print(
+                    f"Selected upstream point at end of segment with highest slope: {max_slope:.6f} at distance {final_distance:.3f}m")
             else:
                 # Fallback to midpoint if no slope found
                 mid_idx = len(upstream_points) // 2
