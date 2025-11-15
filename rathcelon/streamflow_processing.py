@@ -3,19 +3,17 @@
 
 # built-in imports
 import os
-import io
-import time
 
 # third-party imports
-import geopandas as gpd
+import s3fs
 import numpy as np
 import pandas as pd
-from shapely.geometry import Point
-import s3fs
 import xarray as xr
-import requests
+import geopandas as gpd
 from scipy.stats import gumbel_r
+from shapely.geometry import Point
 
+# custom imports
 from .classes import Dam
 
 
