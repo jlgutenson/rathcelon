@@ -480,6 +480,7 @@ class Dam:
         self.flowline = Path(kwargs['flowline'])
         self.dem_dir = Path(kwargs['dem_dir'])
         self.output_dir = Path(kwargs['output_dir'])
+        self.streamflow = Path(kwargs['streamflow'])
 
         # optional parameters
         self.bathy_use_banks = kwargs.get('bathy_use_banks', False)
@@ -491,8 +492,6 @@ class Dam:
         self.known_channel_forming_discharge = kwargs.get('known_channel_forming_discharge', None)
         self.upstream_elevation_change_threshold = 1.0  # kwargs.get('upstream_elevation_change_threshold', 0.1)
 
-        # New parameter for local parquet file
-        self.flow_parquet_file = kwargs.get('flow_parquet_file', None)
 
         # internal attributes
         self.rivid_field = None  # Will be set in process_dam

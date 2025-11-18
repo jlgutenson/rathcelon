@@ -137,7 +137,7 @@ def process_json_input(json_file):
             "known_baseflow": dam.get("known_baseflow", None),
             "known_channel_forming_discharge": dam.get("known_channel_forming_discharge", None),
             "upstream_elevation_change_threshold": dam.get("upstream_elevation_change_threshold", 1.0),
-            "flow_parquet_file": os.path.normpath(dam.get("flow_parquet_file")) if dam.get("flow_parquet_file") else None,
+            "streamflow": os.path.normpath(dam.get("streamflow")) if dam.get("streamflow") else None,
         }
 
         # Ensure the output directory exists
@@ -175,7 +175,7 @@ def process_cli_arguments(args):
         "known_baseflow": args.known_baseflow,
         "known_channel_forming_discharge": args.known_channel_forming_discharge,
         "upstream_elevation_change_threshold": args.upstream_elevation_change_threshold,
-        "flow_parquet_file": normalize_path(args.flow_parquet_file) if args.flow_parquet_file else None,
+        "streamflow": normalize_path(args.streamflow) if args.streamflow else None,
     }
 
     # Ensure the output directory exists
@@ -215,7 +215,7 @@ def main():
     cli_parser.add_argument("--known_baseflow", type=float, default=None, help="Known baseflow value")
     cli_parser.add_argument("--known_channel_forming_discharge", type=float, default=None, help="Known channel forming discharge value")
     cli_parser.add_argument("--upstream_elevation_change_threshold", type=float, help="The upstream elevation change used to identify the appropriate upstream cross-section, default is 1.0 meters", default=1.0)
-    cli_parser.add_argument("--flow_parquet_file", type=str, default=None, help="Path to a local parquet file containing streamflow data")
+    cli_parser.add_argument("--streamflow", type=str, default=None, help="Path to a local .gpkg or .parquet file containing streamflow data")
 
     args = parser.parse_args()
 
