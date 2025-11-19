@@ -480,7 +480,7 @@ class Dam:
         self.flowline = Path(kwargs['flowline'])
         self.dem_dir = Path(kwargs['dem_dir'])
         self.output_dir = Path(kwargs['output_dir'])
-        self.streamflow = Path(kwargs['streamflow'])
+        self.streamflow = Path(kwargs['streamflow']) if kwargs.get('streamflow') else None
 
         # optional parameters
         self.bathy_use_banks = kwargs.get('bathy_use_banks', False)
