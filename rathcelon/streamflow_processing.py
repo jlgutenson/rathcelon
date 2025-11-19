@@ -274,7 +274,7 @@ def create_reanalysis(dam: Dam, rivids_int: list, utm_crs, StrmShp_filtered_gdf)
 
             # -- Fetch FDC --
             fdc_store = s3fs.S3Map(root='s3://geoglows-v2/retrospective/fdc.zarr', s3=s3, check=False)
-            fdc_ds = xr.open_zarr(fdc_store).sel(p_exceed=[50.0, 0.0], river_id=[geoglows_id])
+            fdc_ds = xr.open_zarr(fdc_store).sel(p_exceed=[50.0, 0.0], river_id=s3_fetch_rivids)
             fdc_df = fdc_ds.to_dataframe().reset_index()
 
             if fdc_df.empty:

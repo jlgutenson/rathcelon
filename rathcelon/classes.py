@@ -331,8 +331,10 @@ def write_output_raster(
         band.WriteArray(raster_data)
         band.FlushCache()
     finally:
-        band = None
-        ds = None
+        del band
+        del ds
+        # band = None
+        # ds = None
 
 
 def update_crs(dem_tif: str, lc_tif: str) -> str:
@@ -754,7 +756,6 @@ class Dam:
             print(vdt_df.head())
 
             print(transformer.transform(vdt_df.iloc[0]['X'], vdt_df.iloc[0]['Y']))
-            print('hey')
             curve_data_df[['Lon', 'Lat']] = curve_data_df.apply(
                 lambda row_i: pd.Series(transformer.transform(row_i['X'], row_i['Y'])), axis=1)
             vdt_df[['Lon', 'Lat']] = vdt_df.apply(
