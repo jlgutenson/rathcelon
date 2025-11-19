@@ -474,17 +474,21 @@ def create_mannings_esa(manning_txt: str):
 
 class Dam:
     def __init__(self, **kwargs):
+        def safe_path(p):
+            if pd.isna(p) or p == "" or p is None:
+                return None
+            return Path(p)
         # required parameters
         self.name = kwargs['name']
-        self.csv_path = Path(kwargs['dam_csv'])
+        self.csv_path = safe_path(kwargs['dam_csv'])  # Use safe_path
         self.id_field = kwargs['dam_id_field']
         self.dam_id = kwargs['dam_id']
-        self.flowline = Path(kwargs['flowline'])
-        self.dem_dir = Path(kwargs['dem_dir'])
-        self.output_dir = Path(kwargs['output_dir'])
-        self.streamflow = Path(kwargs['streamflow']) if kwargs.get('streamflow') else None
+        self.flowline = safe_path(kwargs['flowline'])  # Use safe_path
+        self.dem_dir = safe_path(kwargs['dem_dir'])  # Use safe_path
+        self.output_dir = safe_path(kwargs['output_dir'])  # Use safe_path
 
-        # optional parameters
+        # OPTIONAL parameters
+        self.streamflow = safe_path(kwargs.get('streamflow'))
         self.bathy_use_banks = kwargs.get('bathy_use_banks', False)
         self.flood_waterlc_and_strm_cells = kwargs.get('flood_waterlc_and_strm_cells', False)
         self.process_stream_network = kwargs.get('process_stream_network', False)

@@ -31,20 +31,20 @@ from shapely.geometry import Point, LineString #, MultiLineString, shape, mappin
 from .classes import Dam
 
 
-def create_flowfile(MainFlowFile: str, FlowFileName: str, OutputID: int|str, Qparam: str) -> None:
-    with open(MainFlowFile, 'r') as infile:
+def create_flowfile(main_flowfile: str, flowfile_name: str, output_id: int|str, q_param: str) -> None:
+    with open(main_flowfile, 'r') as infile:
         lines = infile.readlines()
 
     headers = lines[0].strip().split(',')
 
     try:
-        q_index = headers.index(Qparam)
-        id_index = headers.index(OutputID)
+        q_index = headers.index(q_param)
+        id_index = headers.index(output_id)
     except ValueError as e:
         raise ValueError(f"Missing excepted column in input file: {e}")
 
-    with open(FlowFileName, 'w') as outfile:
-        outfile.write(f"{OutputID},{Qparam}")
+    with open(flowfile_name, 'w') as outfile:
+        outfile.write(f"{output_id},{q_param}")
         for line in lines[1:]:
             values = line.strip().split(',')
             outfile.write(f"{values[id_index]},{values[q_index]}\n")
@@ -106,28 +106,36 @@ def walk_stream_for_point(line, target_distance: float) -> Point:
     return Point(line.coords[-1])  # Return last point if over length
 
 
-    
 def process_json_input(json_file):
-    """
-        Process input from a JSON file.
-    """
+    """Process input from a JSON file."""
     with open(json_file, 'r') as file:
         print(f'Opening {file}')
         data = json.load(file)
         print(data)
-    
+
+    # Helper to handle NaNs/None/Empty strings safely
+    def safe_normpath(path_val):
+        if isinstance(path_val, str) and path_val.strip():
+            return os.path.normpath(path_val)
+        return None
+
     dams = data.get("dams", [])
     for dam in dams:
         dam_name = dam.get("name")
-        output_dir = os.path.normpath(dam.get("output_dir"))
+
+        # Update these lines to use the safe helper
+        dam_csv = safe_normpath(dam.get("dam_csv"))
+        flowline = safe_normpath(dam.get("flowline"))
+        dem_dir = safe_normpath(dam.get("dem_dir"))
+        output_dir = safe_normpath(dam.get("output_dir"))
 
         dam_dict = {
             "name": dam_name,
-            "dam_csv": os.path.normpath(dam.get("dam_csv")),
+            "dam_csv": dam_csv,
             "dam_id_field": dam.get("dam_id_field"),
-            "dam_id": int(dam.get("dam_id")), 
-            "flowline": os.path.normpath(dam.get("flowline")),
-            "dem_dir": os.path.normpath(dam.get("dem_dir")),
+            "dam_id": int(dam.get("dam_id")),
+            "flowline": flowline,
+            "dem_dir": dem_dir,
             "output_dir": output_dir,
             "bathy_use_banks": dam.get("bathy_use_banks", False),
             "flood_waterlc_and_strm_cells": dam.get("flood_waterlc_and_strm_cells", False),
@@ -137,11 +145,12 @@ def process_json_input(json_file):
             "known_baseflow": dam.get("known_baseflow", None),
             "known_channel_forming_discharge": dam.get("known_channel_forming_discharge", None),
             "upstream_elevation_change_threshold": dam.get("upstream_elevation_change_threshold", 1.0),
-            "streamflow": os.path.normpath(dam.get("streamflow")) if dam.get("streamflow") else None,
+            "streamflow": safe_normpath(dam.get("streamflow")),
         }
 
-        # Ensure the output directory exists
-        os.makedirs(output_dir, exist_ok=True)
+        # Ensure the output directory exists (check if it's not None first)
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
 
         print(f"Processing dam: {dam_name} with parameters: {dam_dict}")
 
