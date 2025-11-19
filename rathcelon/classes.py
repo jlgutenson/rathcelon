@@ -775,7 +775,6 @@ class Dam:
                                                crs="EPSG:4269")
         self.vdt_gdf = gpd.GeoDataFrame(vdt_df, geometry=gpd.points_from_xy(vdt_df['Lon'], vdt_df['Lat']),
                                         crs="EPSG:4269")
-        # self.curve_data_gdf.to_file('./test.gpkg')
 
         # Convert all to projected CRS
         self.curve_data_gdf, self.vdt_gdf = (gdf.to_crs(projected_crs) for gdf in [self.curve_data_gdf, self.vdt_gdf])
