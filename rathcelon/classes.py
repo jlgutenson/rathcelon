@@ -548,7 +548,7 @@ class Dam:
             out_file.write('#Bathymetry_Information\n')
             out_file.write('Bathy_Trap_H\t0.20\n')
             out_file.write(f'Bathy_Use_Banks\t{self.bathy_use_banks}\n')
-            if self.find_banks_based_on_landcover is True:
+            if self.find_banks_based_on_landcover:
                 out_file.write(f'FindBanksBasedOnLandCover\t{self.find_banks_based_on_landcover}\n')
             out_file.write(f'AROutBATHY\t{self.bathy_tif}\n')
             out_file.write(f'BATHY_Out_File\t{self.bathy_tif}\n')
@@ -653,7 +653,7 @@ class Dam:
             while remaining_distance_to_travel > 0:
                 # Get downstream edges from the current link
                 downstream_edges = list(G.out_edges(current_link, data=True))
-                print(G.out_edges(current_link))
+                # print(G.out_edges(current_link))
                 if not downstream_edges:
                     print(f"At failure, current_link = {current_link}")
                     print(G.out_edges(current_link))
@@ -693,7 +693,7 @@ class Dam:
 
                 # Find how far along seg_line our current_point lies
                 proj_distance = seg_line.project(current_point)
-                print(f'proj_distance: {proj_distance}')
+                # print(f'proj_distance: {proj_distance}')
 
                 distance_remaining_in_seg = seg_line.length - proj_distance
 
@@ -756,10 +756,10 @@ class Dam:
         else:
             # Projected -> convert to WGS84
             transformer = Transformer.from_crs(crs, "EPSG:4326", always_xy=True)
-            print("vdt_df shape:", vdt_df.shape)
-            print(vdt_df.head())
+            # print("vdt_df shape:", vdt_df.shape)
+            # print(vdt_df.head())
 
-            print(transformer.transform(vdt_df.iloc[0]['X'], vdt_df.iloc[0]['Y']))
+            # print(transformer.transform(vdt_df.iloc[0]['X'], vdt_df.iloc[0]['Y']))
             curve_data_df[['Lon', 'Lat']] = curve_data_df.apply(
                 lambda row_i: pd.Series(transformer.transform(row_i['X'], row_i['Y'])), axis=1)
             vdt_df[['Lon', 'Lat']] = vdt_df.apply(
@@ -771,9 +771,9 @@ class Dam:
             XS_Out_File_df[['Lon2', 'Lat2']] = XS_Out_File_df.apply(
                 lambda row_i: pd.Series(transformer.transform(row_i['X2'], row_i['Y2'])), axis=1)
 
-            x, y = XS_Out_File_df.loc[0, 'X1'], XS_Out_File_df.loc[0, 'Y1']
-            lon, lat = transformer.transform(x, y)
-            print(f"X1 = {x}, Y1 = {y} → Lon = {lon}, Lat = {lat}")
+            # x, y = XS_Out_File_df.loc[0, 'X1'], XS_Out_File_df.loc[0, 'Y1']
+            # lon, lat = transformer.transform(x, y)
+            # print(f"X1 = {x}, Y1 = {y} → Lon = {lon}, Lat = {lat}")
 
         self.curve_data_gdf = gpd.GeoDataFrame(curve_data_df,
                                                geometry=gpd.points_from_xy(curve_data_df['Lon'], curve_data_df['Lat']),
@@ -784,8 +784,11 @@ class Dam:
         # Convert all to projected CRS
         self.curve_data_gdf, self.vdt_gdf = (gdf.to_crs(projected_crs) for gdf in [self.curve_data_gdf, self.vdt_gdf])
 
-        # use upstream_elevation_change_threshold and distance_upstream_increment to find upstream cross-section
-        # initial intersection point at dam
+        # ---------------------------------------------------------
+        # SIMPLIFIED UPSTREAM SELECTION: One Weir Length Upstream
+        # ---------------------------------------------------------
+
+        # Reset to the dam location
         current_point_geom = nearest_points(closest_stream.geometry, dam_point)[0]
         current_link = start_link
 
@@ -793,140 +796,41 @@ class Dam:
         origin_point_geom = current_point_geom
         origin_link = current_link
 
-        # sample initial BaseElev
-        init_idx = self.curve_data_gdf.geometry.distance(current_point_geom).idxmin()
-        initial_base_elev = self.curve_data_gdf.at[init_idx, 'BaseElev']
+        # Set target distance to exactly one weir length
+        target_distance_upstream = self.weir_length
 
-        # Collect upstream points and elevations for segmentation analysis
-        upstream_points = []
-        upstream_elevations = []
-        upstream_distances = []
-        upstream_links = []
+        print(f"Calculating upstream point exactly {target_distance_upstream} meters upstream of the dam.")
 
-        max_distance = 2 * self.weir_length
-        increment = 1
-
-        # Collect all upstream points up to max distance
-        while True:
-            # compute cumulative distance from the dam
-            distance = self.avg_dist_upstream * increment
-            if distance >= max_distance:
-                break
-
-            # always start from the original dam point/link
-            current_point_geom, current_link = move_upstream(
-                origin_point_geom,
-                origin_link,
-                distance,
+        # Move upstream by the target distance
+        try:
+            upstream_point_geom, upstream_link = move_upstream(
+                current_point_geom,
+                current_link,
+                target_distance_upstream,
                 G
             )
 
-            # reproject to lat/lon if needed, then record
+            # Reproject the result to the target CRS
             upstream_point = (
-                gpd.GeoSeries([current_point_geom], crs=projected_crs)
+                gpd.GeoSeries([upstream_point_geom], crs=projected_crs)
                 .geometry.iloc[0]
             )
 
-            # find nearest BaseElev in curve_data_gdf
-            idx = self.curve_data_gdf.geometry.distance(current_point_geom).idxmin()
-            current_base_elev = self.curve_data_gdf.at[idx, 'BaseElev']
+            # Record the point
+            dam_ids.append(self.dam_id)
+            link_nos.append(upstream_link)
+            points_of_interest.append(upstream_point)
 
-            # store the point data
-            upstream_points.append(upstream_point)
-            upstream_elevations.append(current_base_elev)
-            upstream_distances.append(distance)
-            upstream_links.append(current_link)
+        except Exception as e:
+            print(f"Error moving upstream: {e}")
+            # Fallback: keep dam location if upstream movement fails
+            dam_ids.append(self.dam_id)
+            link_nos.append(origin_link)
+            points_of_interest.append(gpd.GeoSeries([origin_point_geom], crs=projected_crs).geometry.iloc[0])
 
-            increment += 1
-
-        # Break into 10 segments and find the one with highest slope
-        if len(upstream_points) >= 10:
-            segment_size = max(2, len(upstream_points) // 10)  # Ensure at least 2 points per segment
-            max_slope = 0.0
-            best_segment_start_idx = 0
-
-            print(f"Breaking {len(upstream_points)} upstream points into segments of size {segment_size}")
-
-            # Calculate slope for each segment
-            for i in range(0, len(upstream_points) - segment_size + 1, segment_size):
-                end_idx = min(i + segment_size - 1, len(upstream_points) - 1)
-
-                if end_idx <= i:
-                    continue
-
-                # Calculate slope for this segment
-                elev_start = upstream_elevations[i]
-                elev_end = upstream_elevations[end_idx]
-                dist_start = upstream_distances[i]
-                dist_end = upstream_distances[end_idx]
-
-                distance_diff = dist_end - dist_start
-                elevation_diff = abs(elev_end - elev_start)
-
-                if distance_diff > 0:
-                    segment_slope = elevation_diff / distance_diff
-                    print(
-                        f"Segment {i // segment_size + 1}: slope = {segment_slope:.6f} (elev diff: {elevation_diff:.3f}m, dist diff: {distance_diff:.3f}m)")
-
-                    if segment_slope > max_slope:
-                        max_slope = segment_slope
-                        best_segment_start_idx = i  # Save the start of the highest slope segment
-
-            # Use the point upstream of the segment with highest slope
-            if max_slope > 0:
-                if best_segment_start_idx > 0:
-                    # Use the point upstream (before) the highest slope segment
-                    upstream_idx = best_segment_start_idx - 1
-                    upstream_point = upstream_points[upstream_idx]
-                    current_link = upstream_links[upstream_idx]
-                    final_distance = upstream_distances[upstream_idx]
-                    print(
-                        f"Selected upstream point before segment with highest slope: {max_slope:.6f} at distance {final_distance:.3f}m")
-                else:
-                    # If the highest slope segment is the first one, use the start of that segment
-                    upstream_point = upstream_points[best_segment_start_idx]
-                    current_link = upstream_links[best_segment_start_idx]
-                    final_distance = upstream_distances[best_segment_start_idx]
-                    print(
-                        f"Highest slope segment is first segment, using start point at distance {final_distance:.3f}m")
-            else:
-                # Fallback to midpoint if no slope found
-                mid_idx = len(upstream_points) // 2
-                upstream_point = upstream_points[mid_idx]
-                current_link = upstream_links[mid_idx]
-                print("No significant slope found, using midpoint of upstream reach")
-
-        elif len(upstream_points) > 0:
-            # If we have fewer than 10 points, use the original logic as fallback
-            print(f"Only {len(upstream_points)} upstream points found, using elevation change threshold fallback")
-
-            last_base_elev = initial_base_elev
-            for i, (point, elev, dist, link) in enumerate(
-                    zip(upstream_points, upstream_elevations, upstream_distances, upstream_links)):
-                elev_diff = abs(elev - last_base_elev)
-
-                if elev_diff >= self.upstream_elevation_change_threshold:
-                    upstream_point = point
-                    current_link = link
-                    print(f"Found elevation change of {elev_diff:.3f}m at distance {dist:.3f}m")
-                    break
-                last_base_elev = elev
-            else:
-                # If no elevation change found, use the farthest point
-                upstream_point = upstream_points[-1]
-                current_link = upstream_links[-1]
-                print("No elevation change threshold met, using farthest upstream point")
-
-        else:
-            # No upstream points found - this shouldn't happen but handle gracefully
-            print("Warning: No upstream points found, keeping dam location")
-            upstream_point = origin_point_geom
-            current_link = origin_link
-
-        # record the upstream that matches the elevation change threshold we were looking for
-        dam_ids.append(self.dam_id)
-        link_nos.append(current_link)
-        points_of_interest.append(upstream_point)
+        # ---------------------------------------------------------
+        # End Simplified Logic
+        # ---------------------------------------------------------
 
         # **Save the Downstream Points as a Shapefile**
         self.downstream_gdf = gpd.GeoDataFrame(
@@ -957,36 +861,11 @@ class Dam:
         self.vdt_gdf = pd.concat(vdt_gdfs)
         self.curve_data_gdf = pd.concat(curve_data_gdfs)
 
-        # XS_Out_File_df['Lat1'] = lat_base - XS_Out_File_df['r1'] * cellsize_y
-        # XS_Out_File_df['Lon1'] = lon_base + XS_Out_File_df['c1'] * cellsize_x
-        # XS_Out_File_df['Lat2'] = lat_base - XS_Out_File_df['r2'] * cellsize_y
-        # XS_Out_File_df['Lon2'] = lon_base + XS_Out_File_df['c2'] * cellsize_x
-        #
-        # curve_data_df['Lat'] = lat_base - curve_data_df['Row'] * cellsize_y
-        # curve_data_df['Lon'] = lon_base + curve_data_df['Col'] * cellsize_x
-        # vdt_df['Lat'] = lat_base - vdt_df['Row'] * cellsize_y
-        # vdt_df['Lon'] = lon_base + vdt_df['Col'] * cellsize_x
-
         # filter the XS_Out_File_df to only include cross-sections with 'row' and 'col' combinations that match the curve_data_gdf
         # keep only rows whose (Row,Col) is in curve_data_gdf
         XS_Out_File_df = (XS_Out_File_df.merge(self.curve_data_gdf[['COMID', 'Row', 'Col']].drop_duplicates(),
                                                on=['COMID', 'Row', 'Col'], how='inner'))
 
-        # # use lat lon pairs to create a line vector shapefile
-        # xs_lines = []
-        # for index, row in XS_Out_File_df.iterrows():
-        #     start_point = Point(row['Lon1'], row['Lat1'])
-        #     end_point = Point(row['Lon2'], row['Lat2'])
-        #     xs_lines.append(LineString([start_point, end_point]))
-        #
-        # # Create a GeoDataFrame from the lines, set the CRS to the same as the dem
-        # XS_Out_File_df['geometry'] = xs_lines
-        # # Build the CRS object as you already do
-        # crs = CRS.from_wkt(self.rast_proj)
-        # # Create the GeoDataFrame using all columns from XS_Out_File_df, including geometry
-        # self.xs_gdf = gpd.GeoDataFrame(XS_Out_File_df, geometry='geometry', crs=crs)
-        # # # convert the crs of the xs_gdf to match the vdt_gdf and curve_data_gdf
-        # self.xs_gdf = self.xs_gdf.to_crs(projected_crs)
         # Step 1: Build geometry from lon/lat
         xs_lines = [LineString([Point(row['Lon1'], row['Lat1']), Point(row['Lon2'], row['Lat2'])])
                     for _, row in XS_Out_File_df.iterrows()]
@@ -998,6 +877,7 @@ class Dam:
 
         # then set the crs to match the dem proj.
         self.xs_gdf = self.xs_gdf.to_crs(self.rast_proj)  # or to projected_crs if defined separately
+
 
     def _process_geospatial_data(self):
 
