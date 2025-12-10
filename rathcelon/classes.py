@@ -913,10 +913,10 @@ class Dam:
 
             if self.rivid_field == 'hydroseq':
                 # subtract 5000000000000 from the rivid_field in the dam_gdf
-                self.dam_gdf[self.rivid_field] = self.dam_gdf[self.rivid_field] - 5000000000000
+                self.dam_gdf[self.rivid_field] = self.dam_gdf[self.rivid_field]
                 # subtract 5000000000000 from the dnhydroseq field in the dam_gdf if it exists
                 if 'dnhydroseq' in self.dam_gdf.columns:
-                    self.dam_gdf['dnhydroseq'] = self.dam_gdf['dnhydroseq'] - 5000000000000
+                    self.dam_gdf['dnhydroseq'] = self.dam_gdf['dnhydroseq']
 
             self.rivids = self.dam_gdf[self.rivid_field].values
 
