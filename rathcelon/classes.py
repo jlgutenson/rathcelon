@@ -411,29 +411,24 @@ def create_arc_strm_raster(StrmSHP: str, output_raster_path: str, DEM_File: str,
 def create_arc_lc_raster(lc_tif: str, land_tif: str, projWin_extents, ncols: int, nrows: int):
     """
     Creates a land cover raster that is clipped to a specified extent and cell size
-
-
-    Parameters
-    ----------
-    lc_tif: str
-        The path and file name of the source National Land Cover Database land-use/land-cover raster
-    land_tif: str
-        The path and file name of the output land-use/land-cover dataset
-    projWin_extents: list
-        A list of the minimum and maximum extents to which the LAND_File will be clipped, specified as [minimum longitude, maximum latitude, maximum longitude, minimum latitude]
-    ncols: int
-        The number of columns in the output LAND_File raster
-    nrows: int
-        The number of rows in the output LAND_File raster
-
-    Returns
-    -------
-    None
-
+    ... (omitted docstring)
     """
-    ds = gdal.Open(lc_tif)
-    gdal.Translate(land_tif, ds, projWin=projWin_extents, width=ncols, height=nrows)
-    del ds
+
+    # 1. Define the options object for cleaner code (requires GDAL 2.x+)
+    # The key to speed is 'NUM_THREADS=ALL_CPUS'
+    options = gdal.TranslateOptions(
+        projWin=projWin_extents,
+        width=ncols,
+        height=nrows,
+        # Using creation options to enable parallel processing and compression
+        creationOptions=['COMPRESS=LZW', 'NUM_THREADS=ALL_CPUS']
+    )
+
+    # 2. Call gdal.Translate directly on the input filename (lc_tif)
+    # This replaces the two lines: ds = gdal.Open(lc_tif) and del ds
+    gdal.Translate(land_tif, lc_tif, options=options)
+
+    return
 
 
 def create_mannings(manning_txt: str):
@@ -485,6 +480,7 @@ class Dam:
         self.dam_id = kwargs['dam_id']
         self.flowline = safe_path(kwargs['flowline'])  # Use safe_path
         self.dem_dir = safe_path(kwargs['dem_dir'])  # Use safe_path
+        self.land_raster = safe_path(kwargs['land_raster'])
         self.output_dir = safe_path(kwargs['output_dir'])  # Use safe_path
 
         # OPTIONAL parameters
@@ -1198,7 +1194,7 @@ class Dam:
 
         self.strm_tif = os.path.join(self.strm_dir, f'{self.dam_id}_STRM_Raster.tif')
         self.strm_tif_clean = self.strm_tif.replace('.tif', '_Clean.tif')
-        self.land_tif = os.path.join(self.land_dir, f'{self.dam_id}_LAND_Raster.tif')
+        self.land_tif = self.land_raster
 
         self.vdt_txt = os.path.join(self.vdt_dir, f'{self.dam_id}_VDT_Database.txt')
         self.curvefile_csv = os.path.join(self.vdt_dir, f'{self.dam_id}_CurveFile.csv')
@@ -1235,7 +1231,7 @@ class Dam:
         self.avg_dist_upstream = (res_x_m + res_y_m) / 2
 
         # Download and Process Land Cover Data
-        self.lc_tif = ''
+        self.lc_tif = None
         if not os.path.exists(self.land_tif):
 
             # Get geometry in original projection

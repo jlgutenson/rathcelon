@@ -128,6 +128,7 @@ def process_json_input(json_file):
         flowline = safe_normpath(dam.get("flowline"))
         dem_dir = safe_normpath(dam.get("dem_dir"))
         output_dir = safe_normpath(dam.get("output_dir"))
+        land_raster = safe_normpath(dam.get("land_raster"))
 
         dam_dict = {
             "name": dam_name,
@@ -136,6 +137,7 @@ def process_json_input(json_file):
             "dam_id": int(dam.get("dam_id")),
             "flowline": flowline,
             "dem_dir": dem_dir,
+            "land_raster": land_raster,
             "output_dir": output_dir,
             "bathy_use_banks": dam.get("bathy_use_banks", False),
             "flood_waterlc_and_strm_cells": dam.get("flood_waterlc_and_strm_cells", False),
@@ -176,6 +178,7 @@ def process_cli_arguments(args):
         "dam_id": args.dam_id,
         "flowline": normalize_path(args.flowline),
         "dem_dir": normalize_path(args.dem_dir),
+        "land_raster": normalize_path(args.land_raster),
         "bathy_use_banks": args.bathy_use_banks,
         "output_dir": normalize_path(output_dir),
         "process_stream_network": args.process_stream_network,
@@ -216,6 +219,7 @@ def main():
     cli_parser.add_argument("dam_id", type=int, help="ID of the dam in the damn_id_field")
     cli_parser.add_argument("flowline", type=str, help="Path to the flowline shapefile")
     cli_parser.add_argument("dem_dir", type=str, help="Directory containing DEM files")
+    cli_parser.add_argument("land_raster", type=str, help="Path to an existing land-use raster file (e.g., {ID}_Land_Raster.tif) to use instead of downloading ESA data.")
     cli_parser.add_argument("output_dir", type=str, help="Directory where results will be saved")
     cli_parser.add_argument("--bathy_use_banks", action="store_true", help="Use bathy banks for processing")
     cli_parser.add_argument("--process_stream_network", action="store_true", help="Clean DEM data before processing")

@@ -3,6 +3,7 @@
 
 # built-in imports
 import os
+import gc
 
 # third-party imports
 import s3fs
@@ -188,6 +189,9 @@ def create_reanalysis(dam: Dam, rivids_int: list, utm_crs, StrmShp_filtered_gdf)
                 crs="EPSG:4269"  # Assume WGS84 for lat/lon
             )
 
+            del flow_df
+            gc.collect()
+
             # 4. Get coordinates for the flowline segments we care about (from dam object)
             #    rivids_int is already defined (e.g., [LINKNO_1, LINKNO_2, ...])
             #    dam.flowline_gdf is the full GDF for the area, still in its original CRS (flowline_crs)
@@ -277,6 +281,9 @@ def create_reanalysis(dam: Dam, rivids_int: list, utm_crs, StrmShp_filtered_gdf)
             fdc_ds = xr.open_zarr(fdc_store).sel(p_exceed=[50.0, 0.0], river_id=s3_fetch_rivids)
             fdc_df = fdc_ds.to_dataframe().reset_index()
 
+            del fdc_ds
+            gc.collect()
+
             if fdc_df.empty:
                 raise ValueError("FDC data empty for GEOGLOWS ID")
 
@@ -287,6 +294,9 @@ def create_reanalysis(dam: Dam, rivids_int: list, utm_crs, StrmShp_filtered_gdf)
             rp_store = s3fs.S3Map(root='s3://geoglows-v2/retrospective/return-periods.zarr', s3=s3, check=False)
             rp_ds = xr.open_zarr(rp_store).sel(river_id=[geoglows_id])
             rp_df = rp_ds.to_dataframe().reset_index()
+
+            del rp_ds
+            gc.collect()
 
             if rp_df.empty:
                 raise ValueError("Return Period data empty for GEOGLOWS ID")
